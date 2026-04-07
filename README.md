@@ -61,14 +61,20 @@ Add this to your `claude_desktop_config.json`:
 {
   "mcpServers": {
     "authora": {
-      "command": "node",
+      "command": "/path/to/nodejs/node.exe",
       "args": ["/absolute/path/to/authora/dist/index.js"],
       "env": {
         "STELLAR_NETWORK": "stellar:testnet",
         "STELLAR_SECRET_KEY": "YOUR_SECRET_KEY",
+        "REGISTRY_CONTRACT_ID": "YOUR_CONTRACT_ID",
+        "X402_FACILITATOR_URL": "https://channels.openzeppelin.com/x402/testnet",
         "X402_FACILITATOR_API_KEY": "YOUR_OZ_KEY"
       }
     }
+  },
+  "preferences": {
+    "coworkWebSearchEnabled": true,
+    "sidebarMode": "chat"
   }
 }
 ```
