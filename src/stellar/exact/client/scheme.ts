@@ -1,4 +1,11 @@
-import { nativeToScVal, TransactionBuilder, contract } from "@stellar/stellar-sdk";
+import { 
+  nativeToScVal, 
+  TransactionBuilder, 
+  contract, 
+  Asset, 
+  Horizon, 
+  Operation 
+} from "@stellar/stellar-sdk";
 import { Api } from "@stellar/stellar-sdk/rpc";
 import { handleSimulationResult } from "../../shared.js";
 import {
@@ -45,6 +52,41 @@ export class ExactStellarScheme implements SchemeNetworkClient {
     const estimatedLedgerSeconds = await getEstimatedLedgerCloseTimeSeconds(rpcServer);
     const maxLedger = currentLedger + Math.ceil(maxTimeoutSeconds / estimatedLedgerSeconds);
 
+    if (asset === "native") {
+      const server = new Horizon.Server(getRpcUrl(network, this.rpcConfig).replace("soroban-", "horizon-")); // Use horizon for classic
+      const account = await server.loadAccount(sourcePublicKey);
+      
+      const finalTx = new TransactionBuilder(account, { 
+        fee: DEFAULT_BASE_FEE_STROOPS.toString(), 
+        networkPassphrase 
+      })
+        .addOperation(Operation.payment({
+          destination: payTo,
+          asset: Asset.native(),
+          amount: (Number(amount) / 10_000_000).toString(), // Stroops to XLM
+        }))
+        .setTimeout(30)
+        .build();
+
+      if (this.signer.signTransaction) {
+        const signedXdr = await this.signer.signTransaction(finalTx.toXDR());
+        return {
+          x402Version,
+          payload: {
+            transaction: signedXdr,
+          },
+        };
+      }
+
+      return {
+        x402Version,
+        payload: {
+          transaction: finalTx.toXDR(),
+        },
+      };
+    }
+
+    // Soroban Path (For USDC/Contracts)
     const tx = await contract.AssembledTransaction.build({
       contractId: asset,
       method: "transfer",
@@ -68,14 +110,7 @@ export class ExactStellarScheme implements SchemeNetworkClient {
     await tx.simulate();
     handleSimulationResult(tx.simulation);
 
-    const finalTx =
-      tx.simulation && "minResourceFee" in tx.simulation
-        ? TransactionBuilder.cloneFrom(tx.built!, {
-            fee: (DEFAULT_BASE_FEE_STROOPS + parseInt(tx.simulation.minResourceFee, 10)).toString(),
-            sorobanData: (tx.simulation as any).transactionData, // internal helper access
-            networkPassphrase,
-          }).build()
-        : tx.built!;
+    const finalTx = tx.built!;
 
     return {
       x402Version,
@@ -93,6 +128,10 @@ export class ExactStellarScheme implements SchemeNetworkClient {
     if (scheme !== "exact") throw new Error(`Unsupported scheme: ${scheme}`);
     if (!isStellarNetwork(network)) throw new Error(`Unsupported network: ${network}`);
     if (!validateStellarDestinationAddress(payTo)) throw new Error(`Invalid payTo: ${payTo}`);
-    if (!validateStellarAssetAddress(asset)) throw new Error(`Invalid asset: ${asset}`);
+    
+    // Explicitly allow "native" for XLM payments
+    if (asset !== "native" && !validateStellarAssetAddress(asset)) {
+      throw new Error(`Invalid asset: ${asset}`);
+    }
   }
 }

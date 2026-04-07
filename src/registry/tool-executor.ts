@@ -32,18 +32,37 @@ export async function executeRegisteredTool(params: ToolExecutorParams): Promise
 
   // 2. Build the HTTP request
   const { _overrideUrl, ...bodyData } = toolInput;
-  const targetUrl = (_overrideUrl as string) || service.url;
+  const targetUrlBase = (_overrideUrl as string) || service.url;
   
-  // Construct body for POST
-  const body = JSON.stringify(bodyData);
+  const inputKeys = Object.keys(bodyData);
+  const method = inputKeys.length > 0 ? "POST" : "GET";
+  let targetUrl = targetUrlBase;
+
+  const fetchOptions: RequestInit = {
+    method,
+    headers: { "content-type": "application/json" },
+  };
+
+  if (method === "GET" && inputKeys.length > 0) {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(bodyData)) {
+      if (typeof v === "string" || typeof v === "number") {
+        params.set(k, String(v));
+      }
+    }
+    const queryString = params.toString();
+    if (queryString) {
+      targetUrl = targetUrlBase.includes("?") 
+        ? `${targetUrlBase}&${queryString}` 
+        : `${targetUrlBase}?${queryString}`;
+    }
+  } else if (method === "POST") {
+    fetchOptions.body = JSON.stringify(bodyData);
+  }
 
   try {
     // 3. Call the payment-aware fetch logic
-    const response = await fetchWithPayment(targetUrl, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body,
-    });
+    const response = await fetchWithPayment(targetUrl, fetchOptions);
 
     const rawBody = await response.text();
 

@@ -6,7 +6,9 @@
   "description": "Universal x402-Enabled MCP Registry for Stellar",
   "scripts": {
     "dev": "concurrently \"npm run start\" \"npm run start:http\"",
-    "start": "node --enable-source-maps --import tsx src/index.ts",
+    "build": "tsc",
+    "start": "node --enable-source-maps dist/index.js",
+    "start:ts": "node --enable-source-maps --import tsx src/index.ts",
     "start:http": "node --enable-source-maps --import tsx src/http-server.ts",
     "seed": "node --enable-source-maps --import tsx scripts/seed-registry.ts",
     "demo-service": "node --enable-source-maps --import tsx scripts/demo-service.ts",
