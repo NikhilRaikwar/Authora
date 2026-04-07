@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Autora x402 - Price Feed Dashboard</title>
+    <style>
+        body { font-family: 'Inter', sans-serif; background: #0a0a0a; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+        .card { background: #111; border: 1px solid #333; padding: 2rem; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; max-width: 500px; width: 90%; }
+        h1 { color: #00ff88; margin-bottom: 0.5rem; }
+        p { color: #888; margin-bottom: 1.5rem; }
+        .price { font-size: 3rem; font-weight: bold; margin: 1rem 0; color: #fff; }
+        .status { padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.8rem; background: #222; color: #888; }
+        .status.success { background: rgba(0, 255, 136, 0.1); color: #00ff88; }
+        .error { color: #ff4444; font-size: 0.9rem; margin-top: 1rem; display: none; white-space: pre-wrap; }
+        .btn { background: #00ff88; color: #000; border: none; padding: 0.8rem 1.5rem; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        .btn:hover { background: #00cc6e; transform: translateY(-2px); }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Autora Feed</h1>
+        <p>Direct from http://localhost:3000</p>
+        <div id="price" class="price">--.--</div>
+        <div id="status" class="status">Waiting for user interaction...</div>
+        <div id="error" class="error"></div>
+        <br>
+        <button class="btn" onclick="fetchPrice()">Fetch Price</button>
+    </div>
+
+    <script>
+        async function fetchPrice() {
+            const priceEl = document.getElementById('price');
+            const statusEl = document.getElementById('status');
+            const errorEl = document.getElementById('error');
+            
+            errorEl.style.display = 'none';
+            statusEl.innerText = "Attempting fetch...";
+            
+            try {
+                const resp = await fetch('http://localhost:3000/stellar-price');
+                if (resp.status === 402) {
+                    priceEl.innerText = "402";
+                    statusEl.innerText = "Payment Required (Seal of Success!)";
+                    statusEl.className = "status success";
+                    const data = await resp.json();
+                    errorEl.innerText = "Server is LIVE!\n\nPayable via x402 Protocol Header found:\n" + JSON.stringify(data, null, 2);
+                    errorEl.style.display = 'block';
+                    errorEl.style.color = '#00ff88';
+                } else if (resp.ok) {
+                    const data = await resp.json();
+                    priceEl.innerText = data.price;
+                    statusEl.innerText = "Verified Response Received!";
+                    statusEl.className = "status success";
+                    errorEl.style.display = 'none';
+                } else {
+                    throw new Error("Server returned status: " + resp.status);
+                }
+            } catch (err) {
+                statusEl.innerText = "Server Unreachable";
+                errorEl.innerText = "Make sure 'npm run demo-service' is running in your terminal.";
+                errorEl.className = "status";
+                errorEl.style.display = 'block';
+                errorEl.style.color = '#ff4444';
+            }
+        }
+    </script>
+</body>
+</html>

@@ -33,6 +33,27 @@ app.use((req, res, next) => {
   next();
 });
 
+app.get("/health", (req: any, res: any) => {
+  res.json({ 
+    status: "ok", 
+    service: "Autora Demo Price Feed",
+    x402: true,
+    network: "stellar:testnet",
+    usdcAddress: "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA"
+  });
+});
+
+app.use((req: any, res: any, next: any) => {
+  const originalJson = res.json.bind(res);
+  res.json = (body: any) => {
+    if (res.locals.paymentResponse) {
+      res.setHeader("payment-response", JSON.stringify(res.locals.paymentResponse));
+    }
+    return originalJson(body);
+  };
+  next();
+});
+
 // SUPER OVERRIDE: Bypassing package-internal header bugs
 facilitator.getSupported = async () => {
   const resp = await fetch(`${facilitatorUrl}/supported`, {
@@ -94,6 +115,7 @@ const x402Middleware = (config: { price: number, payTo: string }) => {
       
       if (result.success) {
         if (result.settlementResult) {
+          res.locals.paymentResponse = result.settlementResult;
           res.setHeader("PAYMENT-RESPONSE", encodePaymentResponseHeader(result.settlementResult));
         }
         console.log(`[Demo Service] Payment verified successfully via ${facilitatorUrl}`);
@@ -149,5 +171,5 @@ app.listen(port, () => {
   console.log(`URL: http://localhost:${port}/stellar-price`);
   console.log(`Facilitator: ${facilitatorUrl}`);
   console.log(`Seller: ${sellerAddress}`);
-  console.log(`Charge: 0.01 XLM (Native)\n`);
+  console.log(`Charge: 0.001 USDC\n`);
 });

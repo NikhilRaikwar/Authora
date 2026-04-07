@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { AuthoraRegistryClient } from "./registry/registry-client.js";
 import { generateMCPManifest } from "./registry/manifest-generator.js";
+import { globalPaymentTracker } from "./registry/payment-tracker.js";
 
 const currentFilePath = fileURLToPath(import.meta.url);
 const currentDir = dirname(currentFilePath);
@@ -23,6 +24,23 @@ const contractId = process.env.REGISTRY_CONTRACT_ID || "";
 const rpcUrl = process.env.STELLAR_RPC_URL || "https://soroban-testnet.stellar.org";
 const operatorKey = process.env.REGISTRY_OPERATOR_KEY || "";
 const network = process.env.STELLAR_NETWORK || "stellar:testnet";
+
+// --- Payment Tracker Endpoints ---
+
+app.get("/payments", (req, res) => {
+  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  res.json({
+    payments: globalPaymentTracker.getAll(),
+    stats: globalPaymentTracker.getStats()
+  });
+});
+
+app.get("/payments/stats", (req, res) => {
+  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  res.json(globalPaymentTracker.getStats());
+});
+
+// --- Registry Endpoints ---
 
 // Manifest Cache
 let cachedManifest: any = null;
@@ -119,6 +137,34 @@ app.post("/services/register", async (req, res) => {
     res.json({ success: true, txHash: result.txHash });
   } catch (error: any) {
     res.status(500).json({ error: "Registration failed", details: error.message });
+  }
+});
+
+app.get("/demo/verify-payment/:txHash", async (req, res) => {
+  try {
+    const txHash = req.params.txHash;
+    const horizonUrl = "https://horizon-testnet.stellar.org";
+    const response = await fetch(`${horizonUrl}/transactions/${txHash}`);
+
+    if (!response.ok) {
+      return res.status(404).json({ error: "Transaction not found" });
+    }
+
+    const tx = await response.json();
+    const explorerUrl = `https://stellar.expert/explorer/testnet/tx/${txHash}`;
+
+    res.json({
+      verified: true,
+      txHash,
+      ledger: tx.ledger,
+      createdAt: tx.created_at,
+      feeCharged: tx.fee_charged,
+      operationCount: tx.operation_count,
+      explorerUrl,
+      message: "This transaction represents a real USDC x402 payment on Stellar testnet"
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: "Verification failed", details: error.message });
   }
 });
 

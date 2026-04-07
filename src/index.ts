@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { Horizon } from "@stellar/stellar-sdk";
 import { wrapFetchWithPayment, x402Client, x402HTTPClient } from "@x402/fetch";
 import { z } from "zod";
 
@@ -13,7 +14,9 @@ import { createEd25519Signer } from "./stellar/signer.js";
 // Registry Imports
 import { AuthoraRegistryClient } from "./registry/registry-client.js";
 import { generateMCPManifest } from "./registry/manifest-generator.js";
+import { sanitizeToolName } from "./registry/manifest-generator.js";
 import { executeRegisteredTool } from "./registry/tool-executor.js";
+import { globalPaymentTracker } from "./registry/payment-tracker.js";
 
 type StellarNetwork = typeof STELLAR_TESTNET_CAIP2 | typeof STELLAR_PUBNET_CAIP2;
 
@@ -70,8 +73,16 @@ async function main(): Promise<void> {
 
   server.tool("x402_facilitator_supported", "Check configured facilitator support", {}, async () => {
     const facilitatorUrl = process.env.X402_FACILITATOR_URL;
+    const facilitatorApiKey = process.env.X402_FACILITATOR_API_KEY;
+    
     if (!facilitatorUrl) return { content: [{ type: "text", text: "No facilitator configured." }] };
-    const response = await fetch(`${facilitatorUrl}/supported`);
+    
+    const headers: Record<string, string> = { "User-Agent": "curl/8.0.1" };
+    if (facilitatorApiKey) {
+      headers["Authorization"] = `Bearer ${facilitatorApiKey.trim()}`;
+    }
+
+    const response = await fetch(`${facilitatorUrl}/supported`, { headers });
     return { content: [{ type: "text", text: await response.text() }] };
   });
 
@@ -85,11 +96,35 @@ async function main(): Promise<void> {
     },
     async ({ url, method, body }) => {
       const response = await fetchWithPayment(url, { method, body });
+
+      const paymentResponseHeader = response.headers.get("payment-response") || response.headers.get("PAYMENT-RESPONSE");
+      let txHash = "pending";
+      if (paymentResponseHeader) {
+        try {
+          const parsed = JSON.parse(paymentResponseHeader);
+          txHash = parsed.txHash || parsed.transactionHash || "pending";
+        } catch (e) {
+          console.error("Failed to parse payment response header:", e);
+        }
+      }
+
+      if (paymentResponseHeader || response.ok) {
+        globalPaymentTracker.record({
+          timestamp: new Date().toISOString(),
+          serviceName: "Direct Fetch",
+          serviceUrl: url,
+          amountUsdc: "0.001", // Default for direct fetch if unknown
+          txHash,
+          payerAddress: signer.address,
+          success: response.ok,
+        });
+      }
+
       return {
         content: [{ type: "text", text: await response.text() }],
       };
     },
-  );
+);
 
   // --- New Authora Registry Tools ---
 
@@ -182,8 +217,96 @@ async function main(): Promise<void> {
         services,
         fetchWithPayment,
         registryClient,
-        registryConfig: { secretKey: operatorKey, rpcUrl: rpcUrl || "https://soroban-testnet.stellar.org", contractId, network },
+        registryConfig: { 
+          secretKey: operatorKey, 
+          rpcUrl: rpcUrl || "https://soroban-testnet.stellar.org", 
+          contractId, 
+          network,
+          payerAddress: signer.address
+        },
       });
+    }
+  );
+
+  server.tool(
+    "get_payment_history",
+    "View all recent x402 payments made by this Authora instance, with live Stellar Explorer links to verify on-chain transactions",
+    { limit: z.number().default(10).describe("Max records to show") },
+    async ({ limit }) => {
+      const all = globalPaymentTracker.getAll().slice(0, limit);
+      const stats = globalPaymentTracker.getStats();
+      const lines = all.map(p => 
+        `${p.success ? "✓" : "✗"} ${p.serviceName} | ${p.amountUsdc} USDC | ${p.txHash.slice(0,12)}... | ${p.stellarExplorerUrl}`
+      ).join("\n");
+      return { content: [{ type: "text", text: `Stats: ${JSON.stringify(stats, null, 2)}\n\nRecent payments:\n${lines || "No payments yet."}` }] };
+    }
+  );
+
+  server.tool(
+    "check_wallet_balance",
+    "Check the current USDC and XLM balance of the Authora wallet. Use this before calling paid services to ensure sufficient funds.",
+    {},
+    async () => {
+      const horizonUrl = network === STELLAR_PUBNET_CAIP2 
+        ? "https://horizon.stellar.org" 
+        : "https://horizon-testnet.stellar.org";
+
+      const horizonServer = new Horizon.Server(horizonUrl);
+      const account = await horizonServer.loadAccount(signer.address);
+
+      // Find USDC balance (classic asset)
+      const usdcBalance = account.balances.find(
+        (b: any) => b.asset_code === "USDC" && b.asset_type !== "native"
+      );
+      const xlmBalance = account.balances.find((b: any) => b.asset_type === "native");
+
+      const result = {
+        address: signer.address,
+        network,
+        usdc: (usdcBalance as any)?.balance || "0",
+        xlm: (xlmBalance as any)?.balance || "0",
+        note: "USDC balance is for classic Stellar USDC. x402 payments use Soroban USDC (same economic value, different interface)."
+      };
+
+      return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "estimate_service_cost",
+    "Estimate the total USDC cost before calling one or more registered services. Helps agents plan spending before executing paid calls.",
+    {
+      service_names: z.array(z.string()).describe("List of service tool names to estimate cost for"),
+      calls_per_service: z.number().default(1).describe("How many times each service will be called")
+    },
+    async ({ service_names, calls_per_service }) => {
+      const services = await registryClient.listServices({
+        rpcUrl: rpcUrl || "https://soroban-testnet.stellar.org",
+        contractId,
+        limit: 100,
+      });
+
+      const breakdown = service_names.map(name => {
+        const service = services.find(s => 
+          sanitizeToolName(s.url).toLowerCase() === name.toLowerCase() || 
+          s.name.toLowerCase() === name.toLowerCase()
+        );
+        if (!service) return { name, status: "not found", totalCost: "0.0000000 USDC" };
+        const costPerCall = Number(service.priceUsdc) / 10_000_000;
+        return {
+          name,
+          serviceName: service.name,
+          pricePerCall: costPerCall.toFixed(7) + " USDC",
+          totalCost: (costPerCall * calls_per_service).toFixed(7) + " USDC",
+        };
+      });
+
+      const total = breakdown.reduce((sum, b) => {
+        const val = parseFloat(b.totalCost.split(" ")[0]);
+        return sum + (isNaN(val) ? 0 : val);
+      }, 0);
+
+      return { content: [{ type: "text", text: JSON.stringify({ breakdown, totalUSDC: total.toFixed(7) }, null, 2) }] };
     }
   );
 

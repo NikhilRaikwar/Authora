@@ -60,6 +60,13 @@ Authora features a robust, standard-input/output-driven interface encapsulating 
 ### HTTP Manifest Endpoint
 For distributed agents or setups bypassing stdio MCP execution, a lightweight Express HTTP server is built-in (`GET /manifest`). This instantly serves the dynamic manifest JSON payload natively—complete with an in-memory 30-sec cache—bypassing high-latency contract RPC reads.
 
+## Live Payment Verification
+Autora ensures 100% transparency for every transaction. Every payment made by the agent can be independently verified on the Stellar blockchain:
+1. **Tool History:** After a `call_registered_service` or `fetch_paid_resource` call, use the `get_payment_history` tool to see the transaction hash.
+2. **Blockchain Explorer:** Verify the hash directly at [StellarExpert](https://stellar.expert/explorer/testnet/) (`https://stellar.expert/explorer/testnet/tx/<txHash>`).
+3. **Internal Verification:** Use our live demo endpoint for machine-readable proof:
+   - `GET http://localhost:3001/demo/verify-payment/<txHash>` (Returns atomic ledger details)
+
 ## Resources used
 - jamesbachini/x402-mcp-stellar (base repo)
 - stellar/x402-stellar monorepo

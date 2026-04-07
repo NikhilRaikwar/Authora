@@ -1,6 +1,7 @@
 import { ServiceEntry, AuthoraRegistryClient } from "./registry-client.js";
 import { sanitizeToolName } from "./manifest-generator.js";
 import { MCPContent } from "./manifest-types.js";
+import { globalPaymentTracker } from "./payment-tracker.js";
 
 export interface ToolExecutorParams {
   toolName: string;
@@ -13,6 +14,7 @@ export interface ToolExecutorParams {
     rpcUrl: string;
     contractId: string;
     network: string;
+    payerAddress: string;
   };
 }
 
@@ -63,6 +65,29 @@ export async function executeRegisteredTool(params: ToolExecutorParams): Promise
   try {
     // 3. Call the payment-aware fetch logic
     const response = await fetchWithPayment(targetUrl, fetchOptions);
+
+    const paymentResponseHeader = response.headers.get("payment-response") || response.headers.get("PAYMENT-RESPONSE");
+    let txHash = "pending";
+    if (paymentResponseHeader) {
+      try {
+        const parsed = JSON.parse(paymentResponseHeader);
+        txHash = parsed.txHash || parsed.transactionHash || "pending";
+      } catch (e) {
+        console.error("Failed to parse payment response header:", e);
+      }
+    }
+
+    if (paymentResponseHeader || response.ok) {
+      globalPaymentTracker.record({
+        timestamp: new Date().toISOString(),
+        serviceName: service.name,
+        serviceUrl: service.url,
+        amountUsdc: (Number(service.priceUsdc) / 10_000_000).toFixed(7),
+        txHash,
+        payerAddress: registryConfig.payerAddress || "Autora Wallet",
+        success: response.ok,
+      });
+    }
 
     const rawBody = await response.text();
 
