@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Environment Variables
+.env
+.env.local
+
+# Build Outputs
+dist/
+build/
+lib/
+target/
+
+# Rust / Soroban 
+Cargo.lock
+
+# Test Outputs / Logs
+test_err.txt
+coverage/
+jest-report/
+
+# OS and Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# External base library (Skipped from tracking per request)
+x402-mcp-stellar/
