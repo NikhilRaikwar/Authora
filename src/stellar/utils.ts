@@ -1,3 +1,4 @@
+import * as StellarSdk from "@stellar/stellar-sdk";
 import { rpc } from "@stellar/stellar-sdk";
 import {
   DEFAULT_TESTNET_RPC_URL,
@@ -128,17 +129,26 @@ export async function resolveTransactionHash(
         ? "https://horizon.stellar.org" 
         : "https://horizon-testnet.stellar.org";
       
-      const hResponse = await fetch(`${horizonUrl}/accounts/${payerAddress}/transactions?limit=5&order=desc`);
-      if (hResponse.ok) {
-        const hData: any = await hResponse.json();
-        const records = hData._embedded?.records || [];
-        const now = Date.now();
-        
-        for (const tx of records) {
-          const txTime = new Date(tx.created_at).getTime();
-          // 4 minute window for safer matching
-          if (Math.abs(now - txTime) < 240000) { 
+      // Simultaneous polling of Transactions AND Operations for faster capture
+      const [txRes, opRes] = await Promise.all([
+        fetch(`${horizonUrl}/accounts/${payerAddress}/transactions?limit=3&order=desc`),
+        fetch(`${horizonUrl}/accounts/${payerAddress}/operations?limit=3&order=desc`)
+      ]);
+
+      if (txRes.ok) {
+        const txData: any = await txRes.json();
+        for (const tx of txData._embedded?.records || []) {
+          if (Math.abs(Date.now() - new Date(tx.created_at).getTime()) < 240000) {
             return tx.hash;
+          }
+        }
+      }
+
+      if (opRes.ok) {
+        const opData: any = await opRes.json();
+        for (const op of opData._embedded?.records || []) {
+          if (Math.abs(Date.now() - new Date(op.created_at).getTime()) < 240000) {
+            return op.transaction_hash;
           }
         }
       }
@@ -169,5 +179,136 @@ export function decodeAuthoraPaymentHeader<T = any>(headerValue: string | null |
     return JSON.parse(decoded) as T;
   } catch (e) {
     return undefined;
+  }
+}
+
+/**
+ * Autonomous Swap: XLM -> USDC
+ * High-impact demonstration of agentic liquidity management.
+ */
+export async function swapXlmToUsdc(
+  secretKey: string,
+  xlmAmount: string
+): Promise<{ hash: string; usdcReceived: string }> {
+  try {
+    const sourceKeypair = StellarSdk.Keypair.fromSecret(secretKey);
+    const server = new StellarSdk.Horizon.Server("https://horizon-testnet.stellar.org");
+    const sourceAccount = await server.loadAccount(sourceKeypair.publicKey());
+
+    // Official Circle Testnet USDC
+    const USDC_ASSET = new StellarSdk.Asset(
+      "USDC",
+      "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5"
+    );
+
+    // Path Payment: We specify exactly how much native XLM to spend to get USDC
+    const transaction = new StellarSdk.TransactionBuilder(sourceAccount, {
+      fee: StellarSdk.BASE_FEE,
+      networkPassphrase: StellarSdk.Networks.TESTNET,
+    })
+      .addOperation(
+        StellarSdk.Operation.pathPaymentStrictSend({
+          sendAsset: StellarSdk.Asset.native(),
+          sendAmount: xlmAmount,
+          destination: sourceKeypair.publicKey(),
+          destAsset: USDC_ASSET,
+          destMin: "0.0001", // Very low minimum for demonstration
+          path: [], // Horizon will find the best path
+        })
+      )
+      .setTimeout(30)
+      .build();
+
+    transaction.sign(sourceKeypair);
+    const result = await server.submitTransaction(transaction);
+    
+    return {
+      hash: result.hash,
+      usdcReceived: "converted" // Simplified for tool output
+    };
+  } catch (e: any) {
+    throw new Error(`Swap failed: ${e.message}`);
+  }
+}
+
+/**
+ * Add USDC Trustline to an account
+ */
+export async function addUsdcTrustline(
+  secretKey: string
+): Promise<{ hash: string }> {
+  try {
+    const keypair = StellarSdk.Keypair.fromSecret(secretKey);
+    const server = new StellarSdk.Horizon.Server("https://horizon-testnet.stellar.org");
+    const account = await server.loadAccount(keypair.publicKey());
+
+    const USDC_ASSET = new StellarSdk.Asset(
+      "USDC",
+      "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5"
+    );
+
+    const transaction = new StellarSdk.TransactionBuilder(account, {
+      fee: StellarSdk.BASE_FEE,
+      networkPassphrase: StellarSdk.Networks.TESTNET,
+    })
+      .addOperation(
+        StellarSdk.Operation.changeTrust({
+          asset: USDC_ASSET,
+        })
+      )
+      .setTimeout(30)
+      .build();
+
+    transaction.sign(keypair);
+    const result = await server.submitTransaction(transaction);
+    return { hash: result.hash };
+  } catch (e: any) {
+    throw new Error(`Trustline failed: ${e.message}`);
+  }
+}
+
+/**
+ * Atomic Multi-Transfer
+ * Batches multiple payment operations into a single transaction.
+ */
+export async function multiTransfer(
+  secretKey: string,
+  transfers: Array<{ recipient: string, amount: string, assetCode?: string }>
+): Promise<{ hash: string }> {
+  try {
+    const keypair = StellarSdk.Keypair.fromSecret(secretKey);
+    const server = new StellarSdk.Horizon.Server("https://horizon-testnet.stellar.org");
+    const account = await server.loadAccount(keypair.publicKey());
+
+    const txBuilder = new StellarSdk.TransactionBuilder(account, {
+      fee: StellarSdk.BASE_FEE,
+      networkPassphrase: StellarSdk.Networks.TESTNET,
+    });
+
+    for (const t of transfers) {
+      // Default to Native (XLM)
+      let asset = StellarSdk.Asset.native();
+      if (t.assetCode && t.assetCode !== "XLM") {
+        asset = new StellarSdk.Asset(
+          t.assetCode,
+          "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5"
+        );
+      }
+
+      txBuilder.addOperation(
+        StellarSdk.Operation.payment({
+          destination: t.recipient,
+          asset,
+          amount: t.amount,
+        })
+      );
+    }
+
+    const transaction = txBuilder.setTimeout(30).build();
+    transaction.sign(keypair);
+    const result = await server.submitTransaction(transaction);
+    return { hash: result.hash };
+  } catch (e: any) {
+    throw new Error(`Multi-transfer failed: ${e.message}`);
   }
 }

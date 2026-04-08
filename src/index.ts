@@ -5,7 +5,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { Horizon } from "@stellar/stellar-sdk";
 import { wrapFetchWithPayment, x402Client, x402HTTPClient } from "@x402/fetch";
-import { decodeAuthoraPaymentHeader, resolveTransactionHash } from "./stellar/utils.js";
+import { decodeAuthoraPaymentHeader, resolveTransactionHash, swapXlmToUsdc, addUsdcTrustline, multiTransfer } from "./stellar/utils.js";
 import { z } from "zod";
 
 import { STELLAR_PUBNET_CAIP2, STELLAR_TESTNET_CAIP2 } from "./stellar/constants.js";
@@ -87,6 +87,74 @@ async function main(): Promise<void> {
     const response = await fetch(`${facilitatorUrl}/supported`, { headers });
     return { content: [{ type: "text", text: await response.text() }] };
   });
+
+  server.tool(
+    "swap_xlm_to_usdc",
+    "Convert native XLM to USDC on Stellar Testnet for protocol liquidity. Minimum amount is 10 XLM.",
+    {
+      xlmAmount: z.string().describe("Amount of XLM to swap (e.g., '10')"),
+    },
+    async ({ xlmAmount }) => {
+      const secretKey = process.env.STELLAR_SECRET_KEY;
+      if (!secretKey) return { content: [{ type: "text", text: "Wallet not configured." }] };
+      
+      try {
+        const result = await swapXlmToUsdc(secretKey, xlmAmount);
+        return { 
+          content: [{ 
+            type: "text", 
+            text: `Successfully swapped ${xlmAmount} XLM for USDC.\nTransaction: https://stellar.expert/explorer/testnet/tx/${result.hash}` 
+          }] 
+        };
+      } catch (err: any) {
+        return { content: [{ type: "text", text: `Swap failed: ${err.message}` }] };
+      }
+    }
+  );
+
+  server.tool(
+    "add_usdc_trustline",
+    "Enable USDC payments on your Stellar wallet by adding a trustline to the official Testnet USDC issuer.",
+    {},
+    async () => {
+      const secretKey = process.env.STELLAR_SECRET_KEY;
+      if (!secretKey) return { content: [{ type: "text", text: "Wallet not configured." }] };
+      try {
+        const result = await addUsdcTrustline(secretKey);
+        return { content: [{ type: "text", text: `USDC Trustline established!\nTransaction: https://stellar.expert/explorer/testnet/tx/${result.hash}` }] };
+      } catch (err: any) {
+        return { content: [{ type: "text", text: `Failed to add trustline: ${err.message}` }] };
+      }
+    }
+  );
+
+  server.tool(
+    "autonomous_disbursement",
+    "Send multiple payments (XLM or USDC) to different recipients in a single atomic transaction.",
+    {
+      transfers: z.array(z.object({
+        recipient: z.string().describe("Stellar public address of the recipient"),
+        amount: z.string().describe("Amount to send (e.g., '5')"),
+        assetCode: z.string().optional().default("XLM").describe("Asset to send: 'XLM' or 'USDC'")
+      })).describe("List of transfers to execute")
+    },
+    async ({ transfers }) => {
+      const secretKey = process.env.STELLAR_SECRET_KEY;
+      if (!secretKey) return { content: [{ type: "text", text: "Wallet not configured." }] };
+      
+      try {
+        const result = await multiTransfer(secretKey, transfers);
+        return { 
+          content: [{ 
+            type: "text", 
+            text: `Atomic disbursement of ${transfers.length} payments succeeded!\nTransaction: https://stellar.expert/explorer/testnet/tx/${result.hash}` 
+          }] 
+        };
+      } catch (err: any) {
+        return { content: [{ type: "text", text: `Disbursement failed: ${err.message}` }] };
+      }
+    }
+  );
 
   server.tool(
     "fetch_paid_resource",

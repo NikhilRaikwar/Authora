@@ -146,15 +146,58 @@ x402 is the core payment protocol. Every `call_registered_service` invocation:
 
 ---
 
-## MPP Integration
+## MPP Integration (Stripe × Stellar)
 
-Authora also demonstrates Stripe's MPP (Machine Payments Protocol) via the `mpp_demo_charge` tool.
-MPP differs from x402:
-- **x402:** push-based (client signs auth entry, server facilitates)
-- **MPP:** pull-based (server pulls payment from client-authorized credential)
+Authora natively supports Stripe's **Machine Payments Protocol (MPP)**. Key features:
+- **Pull-based payments**: Agents authorize credentials once; the service pulls exact amounts per request.
+- **Native Settlement**: Every MPP charge settles natively on Stellar as a USDC transfer.
+- **Real-time Receipts**: Using our integrated MPP client, Authora decodes payment receipts to extract valid on-chain transaction hashes instantly.
 
-Both protocols settle USDC on Stellar. Authora demonstrates both.
-[MPP Docs →](https://developers.stellar.org/docs/build/agentic-payments/mpp)
+---
+
+## 🔍 The "Hyper-Resolution" Audit Engine
+
+To handle the inherent latency of x402 facilitators and testnet indexing:
+- **Dedicated Polling**: Authora employs a hyper-active polling logic (5 attempts with backoff) to capture transaction hashes.
+- **Protocol Agnostic**: Whether it's an x402 auth-entry (push) or an MPP charge (pull), you get a real 64-character hash that resolves on Stellar Expert.
+- **Zero Placeholders**: Placeholders like `pending ingestion` automatically resolve into clickable links once confirmed by the network.
+
+---
+
+## 🏦 Advanced Wallet Management
+
+Authora doesn't just pay; it manages its own economic lifecycle autonomously.
+
+*   **Atomic Multi-Disbursement**: Batch up to 100 payments (XLM or USDC) in a single atomic transaction for efficient payroll or distribution.
+*   **DEX Liquidity Management**: Autonomously swap native XLM for USDC via Stellar's path payments to replenish service-call reserves.
+*   **Trustline Onboarding**: Enable assets (like USDC) on fresh wallets without manual intervention using the `add_usdc_trustline` tool.
+*   **Asset Support**: Native support for XLM and credit-based assets (USDC) out of the box.
+
+---
+
+## 🛠️ Tool Capability Manifest
+
+Authora exposes the following high-level tools to the AI Agent:
+
+### 📡 Discovery & Management (Free)
+- `list_x402_services`: Fetch the entire Soroban registry of paid tools.
+- `x402_wallet_info`: View current wallet balances (XLM/USDC) and public address.
+- `get_payment_history`: Audit all previous x402/MPP transactions with real-time clickable links.
+- `add_usdc_trustline`: Establish the official USDC trustline on the configured wallet.
+- `swap_xlm_to_usdc`: Convert XLM to USDC on the Stellar DEX for liquidity.
+- `autonomous_disbursement`: Execute atomic batch payments to multiple recipients.
+
+### 💰 Service Execution (Monetized)
+- `call_registered_service`: Executes a paid API call from the registry. Automatically handles the x402 Push or MPP Pull protocol handshake and submits payment on-chain.
+
+---
+
+## 💎 Dual-Protocol Monetization
+
+Authora is designed for the hybrid web3 agent economy:
+
+1.  **x402 (Push)**: The agent receives a 402 challenge, signs an authorization, and pushes funds to the facilitator. Ideal for stateless, per-request billing.
+2. **MPP (Pull)**: Direct micro-payment protocol where the resource server "pulls" an authorization reference. Ideal for high-frequency resource streaming.
 
 ---
 
@@ -214,6 +257,9 @@ npm run seed          # Register services in Soroban registry
 - *"Estimate the cost to call the Stellar price feed once"*
 - *"Call the Stellar price feed service"*
 - *"Show my payment history"*
+- *"Swap 50 XLM for USDC to refill my budget"*
+- *"Send 5 XLM to [Address] and 0.1 USDC to [New Address] in one transaction"*
+- *"Set up a USDC trustline on my current wallet"*
 
 ---
 

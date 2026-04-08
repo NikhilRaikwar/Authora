@@ -11,6 +11,7 @@
     "start:ts": "node --enable-source-maps --import tsx src/index.ts",
     "start:http": "node --enable-source-maps --import tsx src/http-server.ts",
     "seed": "node --enable-source-maps --import tsx scripts/seed-registry.ts",
+    "launch": "npm run build && npm run dev",
     "demo-service": "node --enable-source-maps --import tsx scripts/demo-service.ts",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testTimeout=60000",
     "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch"

@@ -13,7 +13,7 @@ const app = express();
 const port = 3000;
 
 const USDC_SAC = "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA";
-const sellerAddress = process.env.SELLER_ADDRESS || "GAIDBQMDGEEGJF6WQ6VJMRLBVUMPDWD724TUCGTPRBQ4UFMSN766C4FO";
+const sellerAddress = process.env.SELLER_ADDRESS || "GBB3SLFLT4KJO2FK3P4GFURRYGC4ZWB5TDPLISOJ3UX57J7EFYPHHFJT";
 
 // --- X402 CONFIG ---
 const facilitatorUrl = process.env.X402_FACILITATOR_URL || "https://channels.openzeppelin.com/x402/testnet";
@@ -30,7 +30,10 @@ const facilitator = new HTTPFacilitatorClient({
   }
 });
 
-const resourceServer = new x402ResourceServer(facilitator).register("stellar:*", new ExactStellarScheme() as any);
+const resourceServer = new x402ResourceServer(facilitator).register(
+  "stellar:*", 
+  new ExactStellarScheme() as any
+);
 
 // CRITICAL: Must initialize to fetch supported kinds from facilitator
 console.log("[Demo Service] Initializing x402 Resource Server...");
@@ -81,6 +84,8 @@ app.get("/stellar-price", async (req, res) => {
       const txHash = (result.settlementResult as any).transaction || (result.settlementResult as any).hash || "pending";
       console.log(`[x402] Payment settled! Hash: ${txHash}`);
       res.setHeader("PAYMENT-RESPONSE", encodePaymentResponseHeader(result.settlementResult));
+      res.setHeader("payment-response", encodePaymentResponseHeader(result.settlementResult));
+      res.setHeader("x-payment-response", encodePaymentResponseHeader(result.settlementResult));
     }
     return res.json({ price: 0.12, timestamp: new Date(), protocol: "x402" });
   }
@@ -111,8 +116,9 @@ app.get("/mpp-data", async (req, res) => {
 
   // Set the payment-response header if settlement occurred
   const anyResult = mppResult as any;
-  if (anyResult.receipt || anyResult.withReceipt?.receipt) {
-    const receipt = anyResult.receipt || anyResult.withReceipt?.receipt;
+  if (anyResult.receipt || anyResult.withReceipt?.receipt || anyResult.transaction) {
+    const receipt = anyResult.receipt || anyResult.withReceipt?.receipt || anyResult;
+    res.setHeader("payment-response", encodePaymentResponseHeader(receipt));
     res.setHeader("PAYMENT-RESPONSE", encodePaymentResponseHeader(receipt));
   }
 
