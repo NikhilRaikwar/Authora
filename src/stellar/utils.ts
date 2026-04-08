@@ -45,10 +45,7 @@ export function getRpcUrl(network: Network, rpcConfig?: RpcConfig): string {
     case STELLAR_TESTNET_CAIP2:
       return customRpcUrl || DEFAULT_TESTNET_RPC_URL;
     case STELLAR_PUBNET_CAIP2:
-      if (!customRpcUrl) {
-        throw new Error("Stellar mainnet requires a non-empty rpcUrl.");
-      }
-      return customRpcUrl;
+      return customRpcUrl || "https://soroban-rpc.mainnet.stellar.org";
     default:
       throw new Error(`Unknown Stellar network: ${network}`);
   }
@@ -108,4 +105,69 @@ export function convertToTokenAmount(
   const [intPart, decPart = ""] = normalizedDecimal.split(".");
   const paddedDec = decPart.padEnd(decimals, "0").slice(0, decimals);
   return (intPart + paddedDec).replace(/^0+/, "") || "0";
+}
+export async function resolveTransactionHash(
+  currentHash: string, 
+  payerAddress: string, 
+  network: Network
+): Promise<string> {
+  if (currentHash && currentHash !== "pending" && currentHash.length === 64) {
+    return currentHash;
+  }
+
+  // Hyper-active polling for x402/Soroban latency
+  const MAX_ATTEMPTS = 5;
+  const ATTEMPT_DELAY_MS = 3000;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      // Linear delay backoff: 3s, 6s, 9s...
+      await new Promise(resolve => setTimeout(resolve, ATTEMPT_DELAY_MS));
+
+      const horizonUrl = network === STELLAR_PUBNET_CAIP2 
+        ? "https://horizon.stellar.org" 
+        : "https://horizon-testnet.stellar.org";
+      
+      const hResponse = await fetch(`${horizonUrl}/accounts/${payerAddress}/transactions?limit=5&order=desc`);
+      if (hResponse.ok) {
+        const hData: any = await hResponse.json();
+        const records = hData._embedded?.records || [];
+        const now = Date.now();
+        
+        for (const tx of records) {
+          const txTime = new Date(tx.created_at).getTime();
+          // 4 minute window for safer matching
+          if (Math.abs(now - txTime) < 240000) { 
+            return tx.hash;
+          }
+        }
+      }
+    } catch (err) {
+      // Quiet fail for polling
+    }
+  }
+
+  return currentHash || "pending";
+}
+
+/**
+ * Decodes a payment response header natively (x402 or MPP).
+ * Handles both raw JSON and Base64-encoded JSON envelopes.
+ */
+export function decodeAuthoraPaymentHeader<T = any>(headerValue: string | null | undefined): T | undefined {
+  if (!headerValue) return undefined;
+  try {
+    const trimmed = headerValue.trim();
+    
+    // Handle raw JSON
+    if (trimmed.startsWith("{")) {
+       return JSON.parse(trimmed) as T;
+    }
+    
+    // Base64 decoding (Native Node.js / Buffer)
+    const decoded = Buffer.from(trimmed, "base64").toString("utf8");
+    return JSON.parse(decoded) as T;
+  } catch (e) {
+    return undefined;
+  }
 }

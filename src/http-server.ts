@@ -172,3 +172,6 @@ app.listen(port, () => {
   console.log(`Authora HTTP registry server running on port ${port}`);
   console.log(`Manifest URL: http://localhost:${port}/manifest`);
 });
+
+// Keep the event loop alive forever
+setInterval(() => {}, 1 << 30);

@@ -17,10 +17,14 @@ export class PaymentTracker {
   record(entry: Omit<PaymentRecord, "id" | "stellarExplorerUrl">): PaymentRecord {
     const network = process.env.STELLAR_NETWORK || "stellar:testnet";
     const explorerNet = network === "stellar:pubnet" ? "public" : "testnet";
+    const txUrl = (entry.txHash && entry.txHash !== "pending")
+      ? `https://stellar.expert/explorer/${explorerNet}/tx/${entry.txHash}`
+      : `https://stellar.expert/explorer/${explorerNet}/account/${entry.payerAddress}`;
+
     const record: PaymentRecord = {
       ...entry,
       id: Math.random().toString(36).slice(2),
-      stellarExplorerUrl: `https://stellar.expert/explorer/${explorerNet}/tx/${entry.txHash}`,
+      stellarExplorerUrl: txUrl,
     };
     this.records.unshift(record);
     if (this.records.length > this.MAX_RECORDS) this.records.pop();

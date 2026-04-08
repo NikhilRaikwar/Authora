@@ -5,6 +5,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { Horizon } from "@stellar/stellar-sdk";
 import { wrapFetchWithPayment, x402Client, x402HTTPClient } from "@x402/fetch";
+import { decodeAuthoraPaymentHeader, resolveTransactionHash } from "./stellar/utils.js";
 import { z } from "zod";
 
 import { STELLAR_PUBNET_CAIP2, STELLAR_TESTNET_CAIP2 } from "./stellar/constants.js";
@@ -51,6 +52,7 @@ async function main(): Promise<void> {
   const operatorKey = process.env.REGISTRY_OPERATOR_KEY || secretKey;
 
   const signer = createEd25519Signer(secretKey, network);
+  
   const paymentClient = new x402Client().register(
     "stellar:*",
     new ExactStellarScheme(signer, rpcUrl ? { url: rpcUrl } : undefined),
@@ -101,12 +103,16 @@ async function main(): Promise<void> {
       let txHash = "pending";
       if (paymentResponseHeader) {
         try {
-          const parsed = JSON.parse(paymentResponseHeader);
-          txHash = parsed.txHash || parsed.transactionHash || "pending";
+          const decoded = decodeAuthoraPaymentHeader(paymentResponseHeader);
+          if (decoded) {
+            txHash = decoded.transaction || decoded.transactionHash || decoded.hash || decoded.settlementId || decoded.reference || decoded.id || "pending";
+          }
         } catch (e) {
-          console.error("Failed to parse payment response header:", e);
+          console.error("Failed to decode payment response header:", e);
         }
       }
+
+      txHash = await resolveTransactionHash(txHash, signer.address, network as any);
 
       if (paymentResponseHeader || response.ok) {
         globalPaymentTracker.record({
@@ -307,6 +313,45 @@ async function main(): Promise<void> {
       }, 0);
 
       return { content: [{ type: "text", text: JSON.stringify({ breakdown, totalUSDC: total.toFixed(7) }, null, 2) }] };
+    }
+  );
+
+  server.tool(
+    "mpp_demo_charge",
+    "Demonstrates a Stripe MPP (Machine Payments Protocol) Charge intent on Stellar. MPP enables high-frequency machine-to-machine payments as an alternative to x402.",
+    {
+      amount_usdc: z.number().default(0.001).describe("Amount in USDC to charge (default 0.001)"),
+    },
+    async ({ amount_usdc }) => {
+      const { createMPPCharge } = await import("./mpp/mpp-client.js");
+      const result = await createMPPCharge({
+        secretKey,
+        amount: amount_usdc,
+        network,
+        targetUrl: "http://localhost:3000/mpp-data"
+      });
+
+      // Record in history for audit
+      const txHash = await resolveTransactionHash(result.txHash, signer.address, network as any);
+
+      globalPaymentTracker.record({
+        timestamp: new Date().toISOString(),
+        serviceName: "MPP Demo Charge",
+        serviceUrl: "http://localhost:3000/mpp-data",
+        amountUsdc: amount_usdc.toString(),
+        txHash,
+        payerAddress: signer.address,
+        success: true,
+      });
+
+      const output = {
+        protocol: "MPP (Machine Payments Protocol by Stripe)",
+        type: "Charge intent",
+        result,
+        docs: "https://developers.stellar.org/docs/build/agentic-payments/mpp",
+        vs_x402: "MPP uses pull-based charges; x402 uses push-based auth entries. Both settle USDC on Stellar.",
+      };
+      return { content: [{ type: "text", text: JSON.stringify(output, null, 2) }] };
     }
   );
 

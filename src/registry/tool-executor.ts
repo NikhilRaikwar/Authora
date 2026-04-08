@@ -2,6 +2,7 @@ import { ServiceEntry, AuthoraRegistryClient } from "./registry-client.js";
 import { sanitizeToolName } from "./manifest-generator.js";
 import { MCPContent } from "./manifest-types.js";
 import { globalPaymentTracker } from "./payment-tracker.js";
+import { decodeAuthoraPaymentHeader, resolveTransactionHash } from "../stellar/utils.js";
 
 export interface ToolExecutorParams {
   toolName: string;
@@ -70,12 +71,17 @@ export async function executeRegisteredTool(params: ToolExecutorParams): Promise
     let txHash = "pending";
     if (paymentResponseHeader) {
       try {
-        const parsed = JSON.parse(paymentResponseHeader);
-        txHash = parsed.txHash || parsed.transactionHash || "pending";
+        const decoded = decodeAuthoraPaymentHeader(paymentResponseHeader);
+        if (decoded) {
+          txHash = decoded.transaction || decoded.transactionHash || decoded.hash || decoded.settlementId || decoded.reference || decoded.id || "pending";
+        }
       } catch (e) {
-        console.error("Failed to parse payment response header:", e);
+        console.error("Failed to decode payment response header:", e);
       }
     }
+
+    // RAPID: Resolve real hash from Horizon immediately
+    txHash = await resolveTransactionHash(txHash, registryConfig.payerAddress, registryConfig.network as any);
 
     if (paymentResponseHeader || response.ok) {
       globalPaymentTracker.record({

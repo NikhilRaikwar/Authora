@@ -4,26 +4,55 @@ import { resolve } from "node:path";
 import { HTTPFacilitatorClient, x402ResourceServer } from "@x402/core/server";
 import { decodePaymentSignatureHeader, encodePaymentRequiredHeader, encodePaymentResponseHeader } from "@x402/core/http";
 import { ExactStellarScheme } from "@x402/stellar/exact/server";
-import { USDC_TESTNET_ADDRESS } from "@x402/stellar";
+import { Mppx } from "mppx/server";
+import { stellar } from "@stellar/mpp/charge/server";
 
 loadEnv({ path: resolve(process.cwd(), ".env") });
 
 const app = express();
 const port = 3000;
 
-// Setup real x402 Server
+const USDC_SAC = "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA";
+const sellerAddress = process.env.SELLER_ADDRESS || "GAIDBQMDGEEGJF6WQ6VJMRLBVUMPDWD724TUCGTPRBQ4UFMSN766C4FO";
+
+// --- X402 CONFIG ---
 const facilitatorUrl = process.env.X402_FACILITATOR_URL || "https://channels.openzeppelin.com/x402/testnet";
-const facilitatorApiKey = process.env.X402_FACILITATOR_API_KEY?.trim(); // Trim to remove hidden chars (\r, \n)
+const facilitatorApiKey = process.env.X402_FACILITATOR_API_KEY?.trim();
 
-if (facilitatorApiKey) {
-  console.log(`[Demo Service] Facilitator API Key detected (len: ${facilitatorApiKey.length}): ${facilitatorApiKey.substring(0, 4)}...***`);
-} else {
-  console.warn(`[Demo Service] WARNING: No X402_FACILITATOR_API_KEY found in environment!`);
-}
+const facilitator = new HTTPFacilitatorClient({ 
+  url: facilitatorUrl,
+  createAuthHeaders: async () => {
+    const headers = { 
+      "Authorization": `Bearer ${facilitatorApiKey}`,
+      "User-Agent": "Authora-MCP/1.0"
+    };
+    return { verify: headers, settle: headers, supported: headers };
+  }
+});
 
-const facilitator = new HTTPFacilitatorClient({ url: facilitatorUrl });
+const resourceServer = new x402ResourceServer(facilitator).register("stellar:*", new ExactStellarScheme() as any);
 
-// CORS Support for the browser dashboard
+// CRITICAL: Must initialize to fetch supported kinds from facilitator
+console.log("[Demo Service] Initializing x402 Resource Server...");
+await resourceServer.initialize().then(() => {
+  console.log("[Demo Service] x402 Resource Server Initialized Successfully.");
+}).catch(err => {
+  console.error("[Demo Service] FATAL: Failed to initialize x402 server:", err.message);
+});
+
+// --- MPP CONFIG ---
+const mppx = Mppx.create({
+  secretKey: process.env.MPP_SECRET_KEY || "authora-mpp-secret-123",
+  methods: [
+    stellar.charge({
+      recipient: sellerAddress,
+      currency: USDC_SAC,
+      network: "stellar:testnet",
+    }),
+  ],
+});
+
+// --- MIDDLEWARE ---
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
@@ -33,143 +62,75 @@ app.use((req, res, next) => {
   next();
 });
 
-app.get("/health", (req: any, res: any) => {
-  res.json({ 
-    status: "ok", 
-    service: "Autora Demo Price Feed",
-    x402: true,
-    network: "stellar:testnet",
-    usdcAddress: "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA"
-  });
+// --- ENDPOINTS ---
+
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", protocols: ["x402", "MPP"], asset: USDC_SAC });
 });
 
-app.use((req: any, res: any, next: any) => {
-  const originalJson = res.json.bind(res);
-  res.json = (body: any) => {
-    if (res.locals.paymentResponse) {
-      res.setHeader("payment-response", JSON.stringify(res.locals.paymentResponse));
-    }
-    return originalJson(body);
-  };
-  next();
-});
-
-// SUPER OVERRIDE: Bypassing package-internal header bugs
-facilitator.getSupported = async () => {
-  const resp = await fetch(`${facilitatorUrl}/supported`, {
-    headers: { "Authorization": `Bearer ${facilitatorApiKey}`, "User-Agent": "curl/8.0.1" }
-  });
-  if (!resp.ok) throw new Error(`Facilitator getSupported failed (${resp.status})`);
-  return resp.json();
-};
-
-facilitator.verify = async (paymentPayload: any, paymentRequirements: any) => {
-  const resp = await fetch(`${facilitatorUrl}/verify`, {
-    method: "POST",
-    headers: { 
-      "Authorization": `Bearer ${facilitatorApiKey}`, 
-      "Content-Type": "application/json",
-      "User-Agent": "curl/8.0.1" 
-    },
-    body: JSON.stringify({
-      x402Version: paymentPayload.x402Version,
-      paymentPayload,
-      paymentRequirements
-    })
-  });
-  if (!resp.ok) throw new Error(`Facilitator verify failed (${resp.status})`);
-  return resp.json();
-};
-
-const resourceServer = new x402ResourceServer(facilitator)
-  .register("stellar:*", new ExactStellarScheme() as any);
-
-// Initialize (fetches supported kinds from facilitator)
-await resourceServer.initialize().catch(err => {
-  console.error("Warning: Failed to initialize x402 resource server:", err.message);
-});
-
-const x402Middleware = (config: { price: number, payTo: string }) => {
-  return async (req: any, res: any, next: any) => {
-    const signatureHeader = req.headers["payment-signature"] || req.headers["x-payment"];
-    const payload = signatureHeader ? decodePaymentSignatureHeader(signatureHeader) : null;
-    
-    const resourceInfo = { 
-      url: `${req.protocol}://${req.get('host')}${req.originalUrl}`,
-      description: "Autora Price Feed Demo"
-    };
-
-    const USDC = "USDC:GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5";
-
-    const resourceConfig = {
-      scheme: "exact",
-      network: "stellar:testnet" as any,
-      asset: USDC,
-      price: config.price,
-      payTo: config.payTo,
-      maxTimeoutSeconds: 60
-    };
-
-    try {
-      const result = await resourceServer.processPaymentRequest(payload, resourceConfig, resourceInfo);
-      
-      if (result.success) {
-        if (result.settlementResult) {
-          res.locals.paymentResponse = result.settlementResult;
-          res.setHeader("PAYMENT-RESPONSE", encodePaymentResponseHeader(result.settlementResult));
-        }
-        console.log(`[Demo Service] Payment verified successfully via ${facilitatorUrl}`);
-        return next();
-      }
-
-      if (result.requiresPayment) {
-        console.log(`[Demo Service] Issuing 402 challenge for ${config.price} USDC...`);
-        res.setHeader("PAYMENT-REQUIRED", encodePaymentRequiredHeader(result.requiresPayment));
-        return res.status(402).json(result.requiresPayment);
-      }
-
-      res.status(401).json({ error: result.error || "Payment verification failed" });
-    } catch (err: any) {
-      console.error("[Demo Service] Error processing payment:", err.message);
-      res.status(500).json({ error: "Internal server error during payment processing" });
-    }
-  };
-};
-
-// Seller address (Use the same as player for 100% demo success)
-const sellerAddress = process.env.SELLER_ADDRESS || "GAIDBQMDGEEGJF6WQ6VJMRLBVUMPDWD724TUCGTPRBQ4UFMSN766C4FO";
-
-app.use(x402Middleware({
-  price: 0.001,
-  payTo: sellerAddress
-}));
-
+// X402 PROTECTED
 app.get("/stellar-price", async (req, res) => {
-  try {
-    const horizonUrl = "https://horizon-testnet.stellar.org/order_book?selling_asset_type=native&buying_asset_code=USDC&buying_asset_issuer=CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA";
-    const response = await fetch(horizonUrl);
-    const data = await response.json();
-
-    const price = data.bids && data.bids.length > 0 ? parseFloat(data.bids[0].price) : 0.12;
-    
-    res.json({
-      price,
-      volume_24h: 42069,
-      timestamp: new Date().toISOString(),
-      service: "Autora Live Testnet Price Feed",
-      paymentStatus: "Verified via x402 Protocol",
-      receiptUrl: `https://stellar.expert/explorer/testnet/account/${sellerAddress}#payments`, // Link to seller's payment history as receipt
-      note: "Stellar transactions are atomic. No payment is deducted if verification fails."
-    });
-  } catch (error: any) {
-    res.status(500).json({ error: "Failed to fetch XLM price", details: error.message });
+  const signatureHeader = req.headers["payment-signature"] || req.headers["x-payment"];
+  const payload = signatureHeader ? decodePaymentSignatureHeader(signatureHeader as string) : null;
+  const resourceConfig = { scheme: "exact", network: "stellar:testnet" as any, asset: USDC_SAC, price: 0.001, payTo: sellerAddress, maxTimeoutSeconds: 60 };
+  
+  const result = await resourceServer.processPaymentRequest(payload, resourceConfig, { url: req.url });
+  
+  if (result.success) {
+    if (result.settlementResult) {
+      const txHash = (result.settlementResult as any).transaction || (result.settlementResult as any).hash || "pending";
+      console.log(`[x402] Payment settled! Hash: ${txHash}`);
+      res.setHeader("PAYMENT-RESPONSE", encodePaymentResponseHeader(result.settlementResult));
+    }
+    return res.json({ price: 0.12, timestamp: new Date(), protocol: "x402" });
   }
+  
+  if (result.requiresPayment) {
+    res.setHeader("PAYMENT-REQUIRED", encodePaymentRequiredHeader(result.requiresPayment));
+    return res.status(402).json(result.requiresPayment);
+  }
+  res.status(401).json({ error: "Auth failed" });
 });
 
-app.listen(port, () => {
-  console.log(`\n--- Authora PRODUCTION Demo Service Running ---`);
-  console.log(`URL: http://localhost:${port}/stellar-price`);
-  console.log(`Facilitator: ${facilitatorUrl}`);
-  console.log(`Seller: ${sellerAddress}`);
-  console.log(`Charge: 0.001 USDC\n`);
+// MPP PROTECTED (Using Web Request/Response adapter for Mppx)
+app.get("/mpp-data", async (req, res) => {
+  const webReq = new Request(`http://localhost:${port}${req.url}`, { 
+    method: req.method, 
+    headers: new Headers(req.headers as any) 
+  });
+
+  const mppResult = await mppx.charge({
+    amount: "0.001",
+    description: "Authora MPP Premium Data",
+  })(webReq);
+
+  if (mppResult.status === 402) {
+    mppResult.challenge.headers.forEach((v, k) => res.setHeader(k, v));
+    return res.status(402).send(await mppResult.challenge.text());
+  }
+
+  // Set the payment-response header if settlement occurred
+  const anyResult = mppResult as any;
+  if (anyResult.receipt || anyResult.withReceipt?.receipt) {
+    const receipt = anyResult.receipt || anyResult.withReceipt?.receipt;
+    res.setHeader("PAYMENT-RESPONSE", encodePaymentResponseHeader(receipt));
+  }
+
+  res.json({ data: "Restricted MPP Content", timestamp: new Date(), protocol: "MPP" });
 });
+
+const server = app.listen(port, () => {
+  console.log(`\n--- Authora DUAL PROTOCOL Demo Service ---`);
+  console.log(`x402: http://localhost:${port}/stellar-price`);
+  console.log(`MPP:  http://localhost:${port}/mpp-data`);
+  console.log(`Price: 0.001 USDC (SAC: ${USDC_SAC.slice(0,8)}...)\n`);
+});
+
+// Prevent script from exiting immediately
+process.on('SIGINT', () => {
+  server.close();
+  process.exit(0);
+});
+
+// Keep the event loop alive forever
+setInterval(() => {}, 1 << 30);

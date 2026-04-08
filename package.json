@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Universal x402-Enabled MCP Registry for Stellar",
   "scripts": {
-    "dev": "concurrently \"npm run start\" \"npm run start:http\"",
+    "dev": "concurrently \"npm run start\" \"npm run start:http\" \"npm run demo-service\"",
     "build": "tsc",
     "start": "node --enable-source-maps dist/index.js",
     "start:ts": "node --enable-source-maps --import tsx src/index.ts",
@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
+    "@stellar/mpp": "^0.4.0",
     "@stellar/stellar-sdk": "^14.6.1",
     "@x402/core": "^2.5.0",
     "@x402/fetch": "^2.5.0",
@@ -24,6 +25,7 @@
     "cors": "^2.8.6",
     "dotenv": "^16.5.0",
     "express": "^5.2.1",
+    "mppx": "^0.4.12",
     "zod": "^3.25.76"
   },
   "devDependencies": {
