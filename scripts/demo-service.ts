@@ -75,7 +75,7 @@ app.get("/health", (req, res) => {
 app.get("/stellar-price", async (req, res) => {
   const signatureHeader = req.headers["payment-signature"] || req.headers["x-payment"];
   const payload = signatureHeader ? decodePaymentSignatureHeader(signatureHeader as string) : null;
-  const resourceConfig = { scheme: "exact", network: "stellar:testnet" as any, asset: USDC_SAC, price: 0.001, payTo: sellerAddress, maxTimeoutSeconds: 60 };
+  const resourceConfig = { scheme: "exact", network: "stellar:testnet" as any, asset: USDC_SAC, price: 0.01, payTo: sellerAddress, maxTimeoutSeconds: 60 };
   
   const result = await resourceServer.processPaymentRequest(payload, resourceConfig, { url: req.url });
   

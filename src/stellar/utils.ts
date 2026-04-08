@@ -195,11 +195,12 @@ export async function swapXlmToUsdc(
     const server = new StellarSdk.Horizon.Server("https://horizon-testnet.stellar.org");
     const sourceAccount = await server.loadAccount(sourceKeypair.publicKey());
 
-    // Official Circle Testnet USDC
+    // OFFICIAL CIRCLE TESTNET USDC SAC (Soroban Smart Asset Contract)
     const USDC_ASSET = new StellarSdk.Asset(
       "USDC",
       "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5"
     );
+    const USDC_SAC = "CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA";
 
     // Path Payment: We specify exactly how much native XLM to spend to get USDC
     const transaction = new StellarSdk.TransactionBuilder(sourceAccount, {

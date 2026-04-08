@@ -52,7 +52,7 @@ async function main() {
       url: `http://localhost:3000/stellar-price`,
       name: "Stellar Price Feed",
       description: "Get current XLM/USDC price and 24h volume from Stellar DEX",
-      priceUsdc: 0.0005,
+      priceUsdc: 0.001,
       inputSchema: JSON.stringify({
         type: "object",
         properties: {},

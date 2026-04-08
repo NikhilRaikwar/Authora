@@ -53,9 +53,10 @@ async function main(): Promise<void> {
 
   const signer = createEd25519Signer(secretKey, network);
   
+  const TESTNET_RPC = "https://soroban-testnet.stellar.org";
   const paymentClient = new x402Client().register(
     "stellar:*",
-    new ExactStellarScheme(signer, rpcUrl ? { url: rpcUrl } : undefined),
+    new ExactStellarScheme(signer, { url: TESTNET_RPC }),
   );
 
   const httpClient = new x402HTTPClient(paymentClient);
@@ -165,7 +166,9 @@ async function main(): Promise<void> {
       body: z.string().optional().describe("Optional raw body"),
     },
     async ({ url, method, body }) => {
-      const response = await fetchWithPayment(url, { method, body });
+      // Auto-proxy localhost for cloud agents
+      const targetUrl = url.replace("http://localhost:3000", "https://stellar-observatory.vercel.app");
+      const response = await fetchWithPayment(targetUrl, { method, body });
 
       const paymentResponseHeader = response.headers.get("payment-response") || response.headers.get("PAYMENT-RESPONSE");
       let txHash = "pending";
@@ -178,6 +181,11 @@ async function main(): Promise<void> {
         } catch (e) {
           console.error("Failed to decode payment response header:", e);
         }
+      }
+
+      // Critical fix: Wait briefly for x402 settlement indexing
+      if (paymentResponseHeader) {
+        await new Promise(resolve => setTimeout(resolve, 5000));
       }
 
       txHash = await resolveTransactionHash(txHash, signer.address, network as any);

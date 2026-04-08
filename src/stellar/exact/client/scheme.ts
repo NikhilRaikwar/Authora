@@ -40,7 +40,7 @@ export class ExactStellarScheme implements SchemeNetworkClient {
     const sourcePublicKey = this.signer.address;
     const { network, payTo, asset, amount, extra, maxTimeoutSeconds } = paymentRequirements;
     const networkPassphrase = getNetworkPassphrase(network);
-    const rpcUrl = getRpcUrl(network, this.rpcConfig);
+    const rpcUrl = getRpcUrl(network, this.rpcConfig) || "https://soroban-testnet.stellar.org";
 
     if (!extra.areFeesSponsored) {
       throw new Error(`Exact scheme requires areFeesSponsored to be true`);
@@ -110,7 +110,22 @@ export class ExactStellarScheme implements SchemeNetworkClient {
     await tx.simulate();
     handleSimulationResult(tx.simulation);
 
-    const finalTx = tx.built!;
+    // As per Stellar x402 docs, we must set fee to "1" stroop for testnet facilitators
+    // to prevent limit/collision issues and ensure on-chain settlement.
+    // Finalize and sign the transaction itself
+    let finalTx = TransactionBuilder.cloneFrom(tx.built!, {
+      fee: network === "stellar:testnet" ? "1" : DEFAULT_BASE_FEE_STROOPS.toString(),
+      sorobanData: tx.built!.toEnvelope().v1().tx().ext().sorobanData(),
+      networkPassphrase,
+    }).build();
+
+    if (this.signer.signTransaction) {
+      const authResult = await this.signer.signTransaction(finalTx.toXDR());
+      const signedXdr = typeof authResult === "string" ? authResult : (authResult as any).signedTxXdr;
+      if (signedXdr) {
+        finalTx = TransactionBuilder.fromXDR(signedXdr, networkPassphrase) as any;
+      }
+    }
 
     return {
       x402Version,
