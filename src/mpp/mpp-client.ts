@@ -77,11 +77,11 @@ export async function createMPPCharge(params: {
     
     // Fallback demonstration if local setup isn't running
     return {
-      success: true,
-      txHash: "demo-mpp-" + Math.random().toString(16).slice(2, 8),
+      success: false,  // ← change to false so it doesn't show as "verified" in payment history
+      txHash: "",      // ← empty hash, not fake
       amount: params.amount.toString(),
       network: params.network,
-      note: `MPP Charge pattern demonstrated. (Note: ${err.message}). Full flow settles USDC SAC on-chain.`
+      note: `MPP demo endpoint not running. Start with: npm run launch. Full MPP Charge flow: client sends payment-signature header → server validates via Mppx → Stellar USDC settles on-chain. Docs: https://developers.stellar.org/docs/build/agentic-payments/mpp`
     };
   }
 }

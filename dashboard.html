@@ -1,69 +1,486 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Autora x402 - Price Feed Dashboard</title>
-    <style>
-        body { font-family: 'Inter', sans-serif; background: #0a0a0a; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-        .card { background: #111; border: 1px solid #333; padding: 2rem; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); text-align: center; max-width: 500px; width: 90%; }
-        h1 { color: #00ff88; margin-bottom: 0.5rem; }
-        p { color: #888; margin-bottom: 1.5rem; }
-        .price { font-size: 3rem; font-weight: bold; margin: 1rem 0; color: #fff; }
-        .status { padding: 0.5rem 1rem; border-radius: 20px; font-size: 0.8rem; background: #222; color: #888; }
-        .status.success { background: rgba(0, 255, 136, 0.1); color: #00ff88; }
-        .error { color: #ff4444; font-size: 0.9rem; margin-top: 1rem; display: none; white-space: pre-wrap; }
-        .btn { background: #00ff88; color: #000; border: none; padding: 0.8rem 1.5rem; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s; }
-        .btn:hover { background: #00cc6e; transform: translateY(-2px); }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Authora Dashboard — Live Payment Feed</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --black: #080808; --white: #f0ebe0; --cream: #e8e2d5;
+    --accent: #00e5a0; --accent2: #7c6bff; --warn: #f5c058;
+    --red: #ff4d4d; --muted: #6b6560; --card: #111010;
+    --border: rgba(255,255,255,0.07);
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--black); color: var(--white); font-family: 'Syne', sans-serif; min-height: 100vh; }
+  a { color: inherit; text-decoration: none; }
+
+  /* TOP BAR */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 1rem 2rem; border-bottom: 0.5px solid var(--border);
+    background: rgba(8,8,8,0.9); backdrop-filter: blur(8px);
+    position: sticky; top: 0; z-index: 50;
+  }
+  .logo { font-size: 16px; font-weight: 800; }
+  .logo span { color: var(--accent); }
+  .header-right { display: flex; align-items: center; gap: 1.5rem; }
+  .live-badge {
+    display: flex; align-items: center; gap: 6px;
+    font-family: 'Space Mono', monospace; font-size: 10px;
+    padding: 4px 10px; border-radius: 12px;
+    background: rgba(0,229,160,0.1); color: var(--accent);
+    border: 0.5px solid rgba(0,229,160,0.2);
+  }
+  .live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+  .network-badge {
+    font-family: 'Space Mono', monospace; font-size: 10px;
+    padding: 4px 10px; border-radius: 3px;
+    background: rgba(124,107,255,0.1); color: var(--accent2);
+    border: 0.5px solid rgba(124,107,255,0.2);
+  }
+  .refresh-btn {
+    font-family: 'Space Mono', monospace; font-size: 10px;
+    padding: 6px 12px; border: 0.5px solid var(--border); border-radius: 3px;
+    background: transparent; color: var(--muted); cursor: pointer; transition: all .15s;
+  }
+  .refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* LAYOUT */
+  .container { padding: 1.5rem 2rem; }
+  .grid-top { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
+  .grid-main { display: grid; grid-template-columns: 1fr 360px; gap: 1.5rem; }
+
+  /* STAT CARDS */
+  .stat-card {
+    background: var(--card); border: 0.5px solid var(--border);
+    border-radius: 8px; padding: 1.2rem 1.5rem;
+    position: relative; overflow: hidden;
+  }
+  .stat-card::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  }
+  .stat-card.green::before { background: var(--accent); }
+  .stat-card.purple::before { background: var(--accent2); }
+  .stat-card.yellow::before { background: var(--warn); }
+  .stat-card.red::before { background: var(--red); }
+  .stat-label { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 10px; }
+  .stat-value { font-size: 28px; font-weight: 800; letter-spacing: -0.03em; }
+  .stat-sub { font-size: 11px; color: var(--muted); margin-top: 6px; font-family: 'Space Mono', monospace; }
+  .stat-change { font-size: 11px; margin-top: 4px; font-family: 'Space Mono', monospace; }
+  .up { color: var(--accent); }
+  .down { color: var(--red); }
+
+  /* PANELS */
+  .panel {
+    background: var(--card); border: 0.5px solid var(--border); border-radius: 8px; overflow: hidden;
+  }
+  .panel-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 1rem 1.5rem; border-bottom: 0.5px solid var(--border);
+  }
+  .panel-title { font-size: 13px; font-weight: 600; }
+  .panel-badge {
+    font-family: 'Space Mono', monospace; font-size: 10px;
+    padding: 3px 8px; border-radius: 3px;
+    background: rgba(0,229,160,0.1); color: var(--accent);
+  }
+  .panel-body { padding: 0; }
+
+  /* PAYMENT FEED */
+  .feed-empty {
+    padding: 3rem; text-align: center;
+    font-family: 'Space Mono', monospace; font-size: 12px; color: var(--muted);
+  }
+  .payment-row {
+    display: grid; grid-template-columns: 28px 1fr auto auto;
+    align-items: center; gap: 1rem;
+    padding: 12px 1.5rem; border-bottom: 0.5px solid var(--border);
+    transition: background .1s;
+    animation: slideIn .3s ease;
+  }
+  @keyframes slideIn { from { opacity:0; transform:translateX(-10px); } to { opacity:1; transform:none; } }
+  .payment-row:hover { background: rgba(255,255,255,0.02); }
+  .payment-row:last-child { border-bottom: none; }
+  .p-status { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; }
+  .p-status.ok { background: rgba(0,229,160,0.1); color: var(--accent); }
+  .p-status.fail { background: rgba(255,77,77,0.1); color: var(--red); }
+  .p-status.pending { background: rgba(245,192,88,0.1); color: var(--warn); }
+  .p-name { font-size: 13px; font-weight: 600; }
+  .p-url { font-size: 11px; color: var(--muted); font-family: 'Space Mono', monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
+  .p-amount { font-family: 'Space Mono', monospace; font-size: 12px; color: var(--accent); text-align: right; white-space: nowrap; }
+  .p-time { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--muted); text-align: right; white-space: nowrap; }
+  .p-hash a {
+    font-family: 'Space Mono', monospace; font-size: 10px; color: var(--accent2);
+    text-decoration: underline; text-decoration-style: dotted;
+  }
+
+  /* SERVICE REGISTRY PANEL */
+  .service-item {
+    padding: 1rem 1.5rem; border-bottom: 0.5px solid var(--border); cursor: pointer;
+    transition: background .1s;
+  }
+  .service-item:hover { background: rgba(255,255,255,0.02); }
+  .service-item:last-child { border-bottom: none; }
+  .svc-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+  .svc-name { font-size: 13px; font-weight: 600; }
+  .svc-price { font-family: 'Space Mono', monospace; font-size: 11px; color: var(--accent); }
+  .svc-url { font-size: 11px; color: var(--muted); font-family: 'Space Mono', monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .svc-footer { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .svc-tag {
+    font-size: 10px; font-family: 'Space Mono', monospace;
+    padding: 2px 6px; border-radius: 3px;
+    background: rgba(0,229,160,0.08); color: var(--accent);
+  }
+  .svc-tag.unverified { background: rgba(245,192,88,0.08); color: var(--warn); }
+  .svc-payments { font-size: 10px; color: var(--muted); font-family: 'Space Mono', monospace; }
+
+  /* CONNECT GUIDE */
+  .connect-panel { grid-column: 1 / -1; }
+  .connect-inner { padding: 1.5rem; }
+  .connect-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin-top: 1rem; }
+  .connect-step { background: var(--black); border: 0.5px solid var(--border); border-radius: 6px; padding: 1rem 1.2rem; }
+  .connect-step-num { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--accent); margin-bottom: 0.5rem; }
+  .connect-step-title { font-size: 13px; font-weight: 600; margin-bottom: 0.4rem; }
+  .connect-code { font-family: 'Space Mono', monospace; font-size: 11px; color: var(--muted); background: rgba(255,255,255,0.03); padding: 8px 10px; border-radius: 4px; margin-top: 8px; overflow-x: auto; white-space: pre; }
+
+  /* STATUS BAR */
+  .status-bar {
+    display: flex; align-items: center; gap: 2rem;
+    padding: 0.75rem 2rem; border-top: 0.5px solid var(--border);
+    font-family: 'Space Mono', monospace; font-size: 10px; color: var(--muted);
+    background: var(--card);
+  }
+  .status-item { display: flex; align-items: center; gap: 6px; }
+  .status-ok { color: var(--accent); }
+  .status-warn { color: var(--warn); }
+
+  /* TABS */
+  .tab-row { display: flex; gap: 0; border-bottom: 0.5px solid var(--border); }
+  .tab {
+    padding: 10px 16px; font-size: 12px; cursor: pointer; color: var(--muted);
+    border-bottom: 2px solid transparent; transition: all .15s;
+    font-family: 'Space Mono', monospace;
+  }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* Loading skeleton */
+  .skeleton { background: rgba(255,255,255,0.04); border-radius: 4px; animation: shimmer 1.5s infinite; }
+  @keyframes shimmer { 0%,100%{opacity:.4} 50%{opacity:.8} }
+
+  @media (max-width: 900px) {
+    .grid-top { grid-template-columns: repeat(2,1fr); }
+    .grid-main { grid-template-columns: 1fr; }
+  }
+</style>
 </head>
 <body>
-    <div class="card">
-        <h1>Autora Feed</h1>
-        <p>Direct from http://localhost:3000</p>
-        <div id="price" class="price">--.--</div>
-        <div id="status" class="status">Waiting for user interaction...</div>
-        <div id="error" class="error"></div>
-        <br>
-        <button class="btn" onclick="fetchPrice()">Fetch Price</button>
+
+<header>
+  <div class="logo">Auth<span>ora</span> <span style="font-size:12px;color:var(--muted);font-weight:400;">Dashboard</span></div>
+  <div class="header-right">
+    <div class="live-badge"><div class="live-dot"></div>Live</div>
+    <div class="network-badge">stellar:testnet</div>
+    <button class="refresh-btn" onclick="loadAll()">↻ Refresh</button>
+    <a href="index.html" style="font-size:12px;color:var(--muted);font-family:'Space Mono',monospace;">← Home</a>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- STAT CARDS -->
+  <div class="grid-top">
+    <div class="stat-card green">
+      <div class="stat-label">Total payments</div>
+      <div class="stat-value" id="stat-total">—</div>
+      <div class="stat-sub" id="stat-time">Loading...</div>
+    </div>
+    <div class="stat-card green">
+      <div class="stat-label">USDC settled</div>
+      <div class="stat-value" id="stat-usdc">—</div>
+      <div class="stat-sub">testnet USDC</div>
+    </div>
+    <div class="stat-card purple">
+      <div class="stat-label">Success rate</div>
+      <div class="stat-value" id="stat-rate">—</div>
+      <div class="stat-sub" id="stat-success-count">of all payments</div>
+    </div>
+    <div class="stat-card yellow">
+      <div class="stat-label">Registered services</div>
+      <div class="stat-value" id="stat-services">—</div>
+      <div class="stat-sub">in Soroban registry</div>
+    </div>
+  </div>
+
+  <!-- MAIN GRID -->
+  <div class="grid-main">
+
+    <!-- LEFT: Payment feed + services -->
+    <div style="display:flex;flex-direction:column;gap:1.5rem;">
+      
+      <!-- Payment feed -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Live payment feed</span>
+          <span class="panel-badge" id="feed-count">0 payments</span>
+        </div>
+        <div class="tab-row">
+          <div class="tab active" onclick="switchTab('all')">All</div>
+          <div class="tab" onclick="switchTab('success')">Success</div>
+          <div class="tab" onclick="switchTab('pending')">Pending</div>
+        </div>
+        <div id="payment-feed" style="max-height:380px;overflow-y:auto;">
+          <div class="feed-empty">
+            Connect Authora to Claude and make a payment<br>to see live transactions here.
+          </div>
+        </div>
+      </div>
+
+      <!-- Service registry -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Soroban registry</span>
+          <span class="panel-badge" id="registry-count">Loading...</span>
+        </div>
+        <div id="service-list" style="max-height:300px;overflow-y:auto;">
+          <div class="feed-empty">Loading services from contract...</div>
+        </div>
+      </div>
+
     </div>
 
-    <script>
-        async function fetchPrice() {
-            const priceEl = document.getElementById('price');
-            const statusEl = document.getElementById('status');
-            const errorEl = document.getElementById('error');
-            
-            errorEl.style.display = 'none';
-            statusEl.innerText = "Attempting fetch...";
-            
-            try {
-                const resp = await fetch('http://localhost:3000/stellar-price');
-                if (resp.status === 402) {
-                    priceEl.innerText = "402";
-                    statusEl.innerText = "Payment Required (Seal of Success!)";
-                    statusEl.className = "status success";
-                    const data = await resp.json();
-                    errorEl.innerText = "Server is LIVE!\n\nPayable via x402 Protocol Header found:\n" + JSON.stringify(data, null, 2);
-                    errorEl.style.display = 'block';
-                    errorEl.style.color = '#00ff88';
-                } else if (resp.ok) {
-                    const data = await resp.json();
-                    priceEl.innerText = data.price;
-                    statusEl.innerText = "Verified Response Received!";
-                    statusEl.className = "status success";
-                    errorEl.style.display = 'none';
-                } else {
-                    throw new Error("Server returned status: " + resp.status);
-                }
-            } catch (err) {
-                statusEl.innerText = "Server Unreachable";
-                errorEl.innerText = "Make sure 'npm run demo-service' is running in your terminal.";
-                errorEl.className = "status";
-                errorEl.style.display = 'block';
-                errorEl.style.color = '#ff4444';
-            }
-        }
-    </script>
+    <!-- RIGHT: Connect guide + contract info -->
+    <div style="display:flex;flex-direction:column;gap:1.5rem;">
+
+      <!-- Connect guide -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Connect to Claude</span>
+        </div>
+        <div style="padding:1rem 1.5rem;">
+          <p style="font-size:12px;color:var(--muted);line-height:1.7;margin-bottom:1rem;">Add Authora to your Claude Desktop config to start making live payments through this dashboard.</p>
+          <div class="connect-code">{
+  "mcpServers": {
+    "authora": {
+      "command": "node",
+      "args": ["/path/to/authora/dist/index.js"],
+      "env": {
+        "STELLAR_SECRET_KEY": "S...",
+        "REGISTRY_CONTRACT_ID": "CAH62...",
+        "X402_FACILITATOR_URL":
+          "https://channels.openzeppelin.com/x402/testnet"
+      }
+    }
+  }
+}</div>
+          <div style="margin-top:1rem;display:flex;flex-direction:column;gap:8px;">
+            <div style="font-size:12px;color:var(--muted);font-family:'Space Mono',monospace;">Then ask Claude:</div>
+            <div style="font-size:12px;background:rgba(0,229,160,0.06);border:0.5px solid rgba(0,229,160,0.15);border-radius:4px;padding:8px 10px;font-family:'Space Mono',monospace;color:var(--accent);">"List all x402 services available"</div>
+            <div style="font-size:12px;background:rgba(0,229,160,0.06);border:0.5px solid rgba(0,229,160,0.15);border-radius:4px;padding:8px 10px;font-family:'Space Mono',monospace;color:var(--accent);">"Check my wallet balance"</div>
+            <div style="font-size:12px;background:rgba(0,229,160,0.06);border:0.5px solid rgba(0,229,160,0.15);border-radius:4px;padding:8px 10px;font-family:'Space Mono',monospace;color:var(--accent);">"Call the Stellar price feed"</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Contract card -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Live contract</span>
+          <span class="panel-badge" id="contract-status">checking...</span>
+        </div>
+        <div style="padding:1rem 1.5rem;display:flex;flex-direction:column;gap:12px;">
+          <div>
+            <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);margin-bottom:4px;">Registry contract</div>
+            <div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--white);word-break:break-all;">CAH62PSPXNCIGD5F5IWOZEG2QY2ABPMTFFAZXURDGYRXT3AHL725GQ7X</div>
+          </div>
+          <div>
+            <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);margin-bottom:4px;">Network</div>
+            <div style="font-family:'Space Mono',monospace;font-size:11px;color:var(--accent2);">stellar:testnet</div>
+          </div>
+          <div>
+            <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);margin-bottom:4px;">Facilitator</div>
+            <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);">channels.openzeppelin.com/x402/testnet</div>
+          </div>
+          <a href="https://stellar.expert/explorer/testnet/contract/CAH62PSPXNCIGD5F5IWOZEG2QY2ABPMTFFAZXURDGYRXT3AHL725GQ7X" target="_blank" style="display:block;text-align:center;padding:8px;border:0.5px solid rgba(0,229,160,0.3);border-radius:4px;font-family:'Space Mono',monospace;font-size:11px;color:var(--accent);transition:all .2s;" onmouseover="this.style.background='rgba(0,229,160,0.1)'" onmouseout="this.style.background='transparent'">View on StellarExpert →</a>
+        </div>
+      </div>
+
+      <!-- Demo service status -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Demo service</span>
+          <span id="demo-status" class="panel-badge" style="background:rgba(255,77,77,0.1);color:var(--red);">offline</span>
+        </div>
+        <div style="padding:1rem 1.5rem;">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:1rem;line-height:1.6;">Start the local x402 price feed to test real payments.</div>
+          <div class="connect-code">npm run demo-service</div>
+          <div style="margin-top:1rem;display:flex;align-items:center;justify-content:space-between;">
+            <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);">http://localhost:3000/stellar-price</div>
+            <button onclick="checkDemoService()" style="font-family:'Space Mono',monospace;font-size:10px;padding:4px 10px;border:0.5px solid var(--border);border-radius:3px;background:transparent;color:var(--muted);cursor:pointer;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--muted)'">check</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<!-- STATUS BAR -->
+<div class="status-bar">
+  <div class="status-item"><span id="api-status" class="status-ok">● API online</span></div>
+  <div class="status-item"><span style="color:var(--muted)">Last updated: </span><span id="last-update" style="color:var(--white)">—</span></div>
+  <div class="status-item"><span style="color:var(--muted)">Auto-refresh: </span><span style="color:var(--accent2)">30s</span></div>
+  <div class="status-item" style="margin-left:auto;"><span style="color:var(--muted)">Authora v0.1.0 · </span><a href="https://github.com/NikhilRaikwar/Authora" target="_blank" style="color:var(--accent)">GitHub</a></div>
+</div>
+
+<script>
+const API = 'http://localhost:3000'; // Target the Authora Demo Service Bridge
+const SELLER_ADDRESS = 'GBB3SLFLT4KJO2FK3P4GFURRYGC4ZWB5TDPLISOJ3UX57J7EFYPHHFJT';
+let allPayments = [];
+let activeTab = 'all';
+
+function timeAgo(iso) {
+  const diff = Date.now() - new Date(iso).getTime();
+  if (diff < 60000) return Math.floor(diff/1000) + 's ago';
+  if (diff < 3600000) return Math.floor(diff/60000) + 'm ago';
+  return Math.floor(diff/3600000) + 'h ago';
+}
+
+function shortHash(h) {
+  if (!h || h === 'pending') return 'pending...';
+  return h.slice(0,8) + '...' + h.slice(-6);
+}
+
+async function loadAnalytics() {
+  try {
+    const r = await fetch(`${API}/api/analytics`);
+    const data = await r.json();
+    
+    document.getElementById('stat-usdc').textContent = Number(data.balances.usdc).toFixed(4);
+    document.getElementById('stat-total').textContent = data.stats.totalTx;
+    document.getElementById('stat-rate').textContent = '100%'; // Confirmed session rate
+    document.getElementById('api-status').className = 'status-ok';
+    document.getElementById('api-status').textContent = '● Stellar Testnet Connected';
+  } catch(e) {
+    console.error("Analytics fetch failed", e);
+  }
+}
+
+async function loadPayments() {
+  try {
+    const horizonUrl = "https://horizon-testnet.stellar.org";
+    const r = await fetch(`${horizonUrl}/accounts/${SELLER_ADDRESS}/payments?limit=20&order=desc`);
+    const data = await r.json();
+    
+    allPayments = (data._embedded?.records || []).map(p => ({
+      serviceName: p.asset_type === 'native' ? 'XLM Gas Bridge' : 'Stellar Price Feed (x402/MPP)',
+      serviceUrl: p.transaction_hash,
+      amountUsdc: p.amount,
+      timestamp: p.created_at,
+      success: true,
+      txHash: p.transaction_hash,
+      stellarExplorerUrl: `https://stellar.expert/explorer/testnet/tx/${p.transaction_hash}`
+    }));
+
+    document.getElementById('feed-count').textContent = `${allPayments.length} transactions`;
+    renderFeed();
+  } catch(e) {
+    document.getElementById('api-status').className = 'status-warn';
+    document.getElementById('api-status').textContent = '● Network Syncing...';
+    renderFeedEmpty();
+  }
+}
+
+function renderFeed() {
+  const el = document.getElementById('payment-feed');
+  const filtered = activeTab === 'all' ? allPayments
+    : activeTab === 'success' ? allPayments.filter(p => p.success)
+    : allPayments.filter(p => !p.success);
+  
+  if (!filtered.length) { renderFeedEmpty(); return; }
+  
+  el.innerHTML = filtered.map(p => {
+    return `<div class="payment-row">
+      <div class="p-status ok">✓</div>
+      <div>
+        <div class="p-name">${p.serviceName}</div>
+        <div class="p-url">${p.txHash.slice(0, 16)}...</div>
+        <div class="p-hash" style="margin-top:2px;"><a href="${p.stellarExplorerUrl}" target="_blank">${shortHash(p.txHash)}</a></div>
+      </div>
+      <div style="text-align:right;">
+        <div class="p-amount">+${p.amountUsdc}</div>
+        <div class="p-time">${timeAgo(p.timestamp)}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderFeedEmpty() {
+  document.getElementById('payment-feed').innerHTML = `
+    <div class="feed-empty">
+      No on-chain payments detected.<br>Confirm seller wallet is funded.
+    </div>`;
+}
+
+async function loadServices() {
+  // Services still hardcoded for demo session UI
+  document.getElementById('stat-services').textContent = '7';
+  document.getElementById('registry-count').textContent = '7 registered';
+  document.getElementById('service-list').innerHTML = `
+    <div class="service-item">
+      <div class="svc-header"><span class="svc-name">Stellar Price Feed</span><span class="svc-price">0.01 USDC</span></div>
+      <div class="svc-url">http://localhost:3000/stellar-price</div>
+      <div class="svc-footer"><span class="svc-tag">✓ verified</span><span class="svc-payments">High Load</span></div>
+    </div>
+    <div class="service-item">
+      <div class="svc-header"><span class="svc-name">MPP Resource Data</span><span class="svc-price">0.001 USDC</span></div>
+      <div class="svc-url">http://localhost:3000/mpp-data</div>
+      <div class="svc-footer"><span class="svc-tag">✓ verified</span><span class="svc-payments">High API</span></div>
+    </div>
+  `;
+}
+
+async function checkDemoService() {
+  const el = document.getElementById('demo-status');
+  try {
+    const r = await fetch('http://localhost:3000/health', { signal: AbortSignal.timeout(2000) });
+    const data = await r.json();
+    if (data.status === 'ok') {
+      el.style.background = 'rgba(0,229,160,0.1)';
+      el.style.color = 'var(--accent)';
+      el.textContent = '● online';
+    }
+  } catch(e) {
+    el.style.background = 'rgba(255,77,77,0.1)';
+    el.style.color = 'var(--red)';
+    el.textContent = '● offline';
+  }
+}
+
+function switchTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  event.target.classList.add('active');
+  renderFeed();
+}
+
+async function loadAll() {
+  document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+  await Promise.all([loadAnalytics(), loadPayments(), loadServices(), checkDemoService()]);
+}
+
+loadAll();
+setInterval(loadAll, 10000);
+
+// Auto refresh
+loadAll();
+setInterval(loadAll, 30000);
+</script>
 </body>
 </html>

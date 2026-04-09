@@ -1,11 +1,9 @@
 import express from "express";
 import { config as loadEnv } from "dotenv";
 import { resolve } from "node:path";
-import { HTTPFacilitatorClient, x402ResourceServer } from "@x402/core/server";
-import { decodePaymentSignatureHeader, encodePaymentRequiredHeader, encodePaymentResponseHeader } from "@x402/core/http";
+import { HTTPFacilitatorClient } from "@x402/core/server";
+import { x402ResourceServer, paymentMiddleware } from "@x402/express";
 import { ExactStellarScheme } from "@x402/stellar/exact/server";
-import { Mppx } from "mppx/server";
-import { stellar } from "@stellar/mpp/charge/server";
 
 loadEnv({ path: resolve(process.cwd(), ".env") });
 
@@ -19,7 +17,7 @@ const sellerAddress = process.env.SELLER_ADDRESS || "GBB3SLFLT4KJO2FK3P4GFURRYGC
 const facilitatorUrl = process.env.X402_FACILITATOR_URL || "https://channels.openzeppelin.com/x402/testnet";
 const facilitatorApiKey = process.env.X402_FACILITATOR_API_KEY?.trim();
 
-const facilitator = new HTTPFacilitatorClient({ 
+const facilitatorClient = new HTTPFacilitatorClient({ 
   url: facilitatorUrl,
   createAuthHeaders: async () => {
     const headers = { 
@@ -30,29 +28,15 @@ const facilitator = new HTTPFacilitatorClient({
   }
 });
 
-const resourceServer = new x402ResourceServer(facilitator).register(
-  "stellar:*", 
+const resourceServer = new x402ResourceServer(facilitatorClient).register(
+  "stellar:testnet", 
   new ExactStellarScheme() as any
 );
 
-// CRITICAL: Must initialize to fetch supported kinds from facilitator
+// CRITICAL: Initialize to fetch supported kinds from facilitator
 console.log("[Demo Service] Initializing x402 Resource Server...");
-await resourceServer.initialize().then(() => {
-  console.log("[Demo Service] x402 Resource Server Initialized Successfully.");
-}).catch(err => {
-  console.error("[Demo Service] FATAL: Failed to initialize x402 server:", err.message);
-});
-
-// --- MPP CONFIG ---
-const mppx = Mppx.create({
-  secretKey: process.env.MPP_SECRET_KEY || "authora-mpp-secret-123",
-  methods: [
-    stellar.charge({
-      recipient: sellerAddress,
-      currency: USDC_SAC,
-      network: "stellar:testnet",
-    }),
-  ],
+await resourceServer.initialize().catch(err => {
+  console.error("[Demo Service] Warning during initialization (proceeding):", err.message);
 });
 
 // --- MIDDLEWARE ---
@@ -65,64 +49,88 @@ app.use((req, res, next) => {
   next();
 });
 
-// --- ENDPOINTS ---
-
+// Health check BEFORE payment middleware
 app.get("/health", (req, res) => {
   res.json({ status: "ok", protocols: ["x402", "MPP"], asset: USDC_SAC });
 });
 
-// X402 PROTECTED
-app.get("/stellar-price", async (req, res) => {
-  const signatureHeader = req.headers["payment-signature"] || req.headers["x-payment"];
-  const payload = signatureHeader ? decodePaymentSignatureHeader(signatureHeader as string) : null;
-  const resourceConfig = { scheme: "exact", network: "stellar:testnet" as any, asset: USDC_SAC, price: 0.01, payTo: sellerAddress, maxTimeoutSeconds: 60 };
-  
-  const result = await resourceServer.processPaymentRequest(payload, resourceConfig, { url: req.url });
-  
-  if (result.success) {
-    if (result.settlementResult) {
-      const txHash = (result.settlementResult as any).transaction || (result.settlementResult as any).hash || "pending";
-      console.log(`[x402] Payment settled! Hash: ${txHash}`);
-      res.setHeader("PAYMENT-RESPONSE", encodePaymentResponseHeader(result.settlementResult));
-      res.setHeader("payment-response", encodePaymentResponseHeader(result.settlementResult));
-      res.setHeader("x-payment-response", encodePaymentResponseHeader(result.settlementResult));
-    }
-    return res.json({ price: 0.12, timestamp: new Date(), protocol: "x402" });
-  }
-  
-  if (result.requiresPayment) {
-    res.setHeader("PAYMENT-REQUIRED", encodePaymentRequiredHeader(result.requiresPayment));
-    return res.status(402).json(result.requiresPayment);
-  }
-  res.status(401).json({ error: "Auth failed" });
+// Official Declarative Middleware for Protected Routes
+app.use(
+  paymentMiddleware(
+    {
+      "GET /stellar-price": {
+        accepts: [
+          {
+            scheme: "exact",
+            price: "$0.01",
+            network: "stellar:testnet",
+            payTo: sellerAddress,
+            extra: {
+                asset: USDC_SAC,
+                assetCode: "USDC",
+                issuer: "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5"
+            }
+          },
+        ],
+        description: "Authora XLM/USDC price feed",
+        mimeType: "application/json",
+      },
+      "GET /mpp-data": {
+        accepts: [
+          {
+            scheme: "exact", 
+            price: "$0.001",
+            network: "stellar:testnet",
+            payTo: sellerAddress,
+            extra: {
+                asset: USDC_SAC,
+                assetCode: "USDC",
+                issuer: "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5"
+            }
+          },
+        ],
+        description: "Authora MPP demo data",
+        mimeType: "application/json",
+      },
+    },
+    resourceServer,
+  ),
+);
+
+// --- ENDPOINTS ---
+app.get("/stellar-price", (req, res) => {
+  res.json({ price: 0.12, timestamp: new Date(), protocol: "x402" });
 });
 
-// MPP PROTECTED (Using Web Request/Response adapter for Mppx)
-app.get("/mpp-data", async (req, res) => {
-  const webReq = new Request(`http://localhost:${port}${req.url}`, { 
-    method: req.method, 
-    headers: new Headers(req.headers as any) 
-  });
-
-  const mppResult = await mppx.charge({
-    amount: "0.001",
-    description: "Authora MPP Premium Data",
-  })(webReq);
-
-  if (mppResult.status === 402) {
-    mppResult.challenge.headers.forEach((v, k) => res.setHeader(k, v));
-    return res.status(402).send(await mppResult.challenge.text());
-  }
-
-  // Set the payment-response header if settlement occurred
-  const anyResult = mppResult as any;
-  if (anyResult.receipt || anyResult.withReceipt?.receipt || anyResult.transaction) {
-    const receipt = anyResult.receipt || anyResult.withReceipt?.receipt || anyResult;
-    res.setHeader("payment-response", encodePaymentResponseHeader(receipt));
-    res.setHeader("PAYMENT-RESPONSE", encodePaymentResponseHeader(receipt));
-  }
-
+app.get("/mpp-data", (req, res) => {
   res.json({ data: "Restricted MPP Content", timestamp: new Date(), protocol: "MPP" });
+});
+
+// Real Analytics Bridge for Dashboard
+app.get("/api/analytics", async (req, res) => {
+  try {
+    const horizonUrl = "https://horizon-testnet.stellar.org";
+    const accountResponse = await fetch(`${horizonUrl}/accounts/${sellerAddress}`);
+    if (!accountResponse.ok) throw new Error("Failed to fetch seller account");
+    
+    const account: any = await accountResponse.json();
+    const usdcBalance = account.balances.find((b: any) => b.asset_code === "USDC")?.balance || "0.000";
+    const xlmBalance = account.balances.find((b: any) => b.asset_type === "native")?.balance || "0.000";
+
+    res.json({
+      sellerAddress,
+      balances: {
+        usdc: usdcBalance,
+        xlm: xlmBalance
+      },
+      stats: {
+        totalTx: account.history_count || 0,
+        network: "stellar:testnet"
+      }
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 const server = app.listen(port, () => {

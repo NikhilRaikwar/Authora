@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Authora — x402 Service Registry for Stellar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&family=Playfair+Display:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+:root {
+  --g: #00e5a0;
+  --g2: #00b87a;
+  --dim: rgba(0,229,160,.12);
+  --bg: #050505;
+  --fg: #ede8de;
+  --muted: #6a6560;
+  --card: #0c0c0b;
+  --border: rgba(255,255,255,.06);
+  --border2: rgba(0,229,160,.2);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html{scroll-behavior:smooth;}
+body{
+  background:var(--bg);
+  color:var(--fg);
+  font-family:'DM Mono',monospace;
+  overflow-x:hidden;
+  min-height:100vh;
+}
+::selection{background:var(--g);color:#000;}
+
+/* ── noise overlay ── */
+body::before{
+  content:'';position:fixed;inset:0;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events:none;z-index:0;opacity:.5;
+}
+
+/* ── NAV ── */
+nav{
+  position:fixed;top:0;left:0;right:0;z-index:100;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:1rem 2rem;
+  border-bottom:0.5px solid var(--border);
+  background:rgba(5,5,5,.88);
+  backdrop-filter:blur(16px);
+}
+.logo{font-size:15px;font-weight:500;letter-spacing:.06em;}
+.logo em{font-style:normal;color:var(--g);}
+.nav-r{display:flex;align-items:center;gap:1.5rem;}
+.nav-link{font-size:11px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;text-decoration:none;transition:color .15s;}
+.nav-link:hover{color:var(--fg);}
+.nav-pill{
+  font-size:11px;padding:6px 16px;border:0.5px solid var(--g);
+  color:var(--g);border-radius:2px;text-decoration:none;
+  transition:all .15s;letter-spacing:.06em;
+}
+.nav-pill:hover{background:var(--g);color:#000;}
+
+/* ── HERO ── */
+.hero{
+  min-height:100vh;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  text-align:center;
+  padding:7rem 2rem 4rem;
+  position:relative;
+}
+
+/* cross-grid background */
+.hero-grid{
+  position:absolute;inset:0;
+  background-image:
+    linear-gradient(rgba(0,229,160,.04) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(0,229,160,.04) 1px,transparent 1px);
+  background-size:44px 44px;
+  mask-image:radial-gradient(ellipse 80% 60% at 50% 50%,black 40%,transparent 100%);
+}
+/* corner brackets */
+.hero::after{
+  content:'';position:absolute;
+  top:6rem;left:50%;transform:translateX(-50%);
+  width:min(640px,90vw);height:70vh;
+  border-left:0.5px solid rgba(0,229,160,.15);
+  border-right:0.5px solid rgba(0,229,160,.15);
+  border-top:0.5px solid rgba(0,229,160,.15);
+  border-radius:0;pointer-events:none;
+}
+
+.eyebrow{
+  font-size:10px;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--g);margin-bottom:2.5rem;
+  display:flex;align-items:center;gap:1rem;
+  animation:fadeUp .7s ease both;
+}
+.eyebrow::before,.eyebrow::after{content:'';flex:1;height:0.5px;background:var(--g);opacity:.3;max-width:60px;}
+
+h1{
+  font-family:'Playfair Display',serif;
+  font-size:clamp(3.2rem,10vw,9rem);
+  font-weight:900;
+  line-height:.92;
+  letter-spacing:-.03em;
+  margin-bottom:2.5rem;
+  animation:fadeUp .7s .15s ease both;
+  opacity:0;
+}
+h1 .accent{color:var(--g);}
+h1 .thin{font-weight:400;font-style:italic;}
+
+.hero-desc{
+  font-size:14px;color:var(--muted);
+  max-width:520px;line-height:1.9;
+  margin-bottom:3rem;font-family:'DM Mono',monospace;
+  animation:fadeUp .7s .3s ease both;
+  opacity:0;
+}
+
+.hero-actions{
+  display:flex;gap:1rem;flex-wrap:wrap;justify-content:center;
+  animation:fadeUp .7s .45s ease both;opacity:0;
+}
+.btn-p{
+  font-size:12px;padding:13px 32px;
+  background:var(--g);color:#000;font-weight:500;
+  border:none;border-radius:2px;cursor:pointer;
+  text-decoration:none;letter-spacing:.06em;
+  transition:all .2s;
+}
+.btn-p:hover{background:#fff;transform:translateY(-2px);}
+.btn-o{
+  font-size:12px;padding:13px 32px;
+  background:transparent;color:var(--muted);
+  border:0.5px solid var(--border);border-radius:2px;
+  text-decoration:none;letter-spacing:.06em;
+  transition:all .2s;
+}
+.btn-o:hover{border-color:var(--fg);color:var(--fg);}
+
+/* pulse dot */
+.live{display:inline-flex;align-items:center;gap:6px;font-size:10px;color:var(--g);letter-spacing:.1em;}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--g);animation:pulse 2s infinite;}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(1.5)}}
+
+/* stats strip */
+.stats-strip{
+  display:flex;gap:0;margin-top:5rem;
+  border-top:0.5px solid var(--border);border-bottom:0.5px solid var(--border);
+  width:100%;max-width:700px;
+  animation:fadeUp .7s .6s ease both;opacity:0;
+}
+.stat{
+  flex:1;padding:1.2rem .5rem;text-align:center;
+  border-right:0.5px solid var(--border);
+}
+.stat:last-child{border-right:none;}
+.stat-n{font-family:'Playfair Display',serif;font-size:2rem;font-weight:700;color:var(--fg);}
+.stat-l{font-size:10px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;margin-top:4px;}
+
+/* ── TICKER ── */
+.ticker-wrap{
+  overflow:hidden;border-top:0.5px solid var(--border);border-bottom:0.5px solid var(--border);
+  padding:11px 0;background:var(--dim);
+}
+.ticker{display:flex;width:max-content;animation:tick 22s linear infinite;}
+.ti{font-size:11px;color:var(--muted);padding:0 2.5rem;white-space:nowrap;letter-spacing:.08em;}
+.ti b{color:var(--g);font-weight:400;}
+@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+
+/* ── SECTIONS ── */
+.section{padding:6rem 2rem;position:relative;}
+.section-inner{max-width:1000px;margin:0 auto;}
+
+.label{
+  font-size:10px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--g);margin-bottom:3rem;
+  display:flex;align-items:center;gap:1rem;
+}
+.label::after{content:'';flex:1;height:0.5px;background:var(--border);max-width:200px;}
+
+/* HOW SECTION */
+.steps{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  border:0.5px solid var(--border);
+  background:var(--border);
+  gap:0.5px;
+}
+@media(max-width:768px){.steps{grid-template-columns:1fr 1fr;}}
+@media(max-width:480px){.steps{grid-template-columns:1fr;}}
+.step{
+  background:var(--card);
+  padding:2.5rem 2rem;
+  position:relative;
+  transition:background .2s;
+}
+.step:hover{background:rgba(0,229,160,.03);}
+.step-n{
+  font-family:'Playfair Display',serif;
+  font-size:4rem;font-weight:700;
+  color:rgba(255,255,255,.05);
+  position:absolute;top:.5rem;right:1rem;
+  line-height:1;
+}
+.step-icon{font-size:1.5rem;margin-bottom:1.5rem;}
+.step h3{font-size:13px;font-weight:500;margin-bottom:.75rem;color:var(--fg);}
+.step p{font-size:12px;color:var(--muted);line-height:1.8;}
+.step-tag{
+  display:inline-block;margin-top:1.2rem;
+  font-size:9px;letter-spacing:.12em;text-transform:uppercase;
+  padding:3px 8px;background:var(--dim);color:var(--g);border-radius:1px;
+}
+
+/* TOOLS */
+.tools-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(280px,1fr));
+  gap:0.5px;background:var(--border);
+}
+.tool{
+  background:var(--card);padding:1.5rem;
+  transition:background .2s;
+}
+.tool:hover{background:rgba(0,229,160,.03);}
+.tool-cat{font-size:9px;letter-spacing:.15em;text-transform:uppercase;color:var(--g);margin-bottom:.6rem;}
+.tool-name{font-size:13px;font-weight:500;color:var(--fg);margin-bottom:.5rem;font-family:'DM Mono',monospace;}
+.tool-desc{font-size:11px;color:var(--muted);line-height:1.7;}
+
+/* FLOW BLOCK */
+.flow-block{
+  background:var(--card);border:0.5px solid var(--border);
+  padding:3rem;
+  max-width:780px;margin:0 auto;
+}
+.flow-title{
+  font-family:'Playfair Display',serif;
+  font-size:clamp(1.8rem,4vw,3.5rem);
+  font-weight:700;line-height:1;
+  letter-spacing:-.02em;margin-bottom:2rem;
+}
+.flow-title em{font-style:italic;color:var(--g);}
+pre.code{
+  background:var(--bg);
+  border:0.5px solid var(--border);
+  padding:1.5rem;
+  font-size:12px;line-height:1.9;
+  overflow-x:auto;
+  font-family:'DM Mono',monospace;
+  border-radius:0;
+}
+.c1{color:#555;}
+.c2{color:var(--g);}
+.c3{color:#f5c058;}
+.c4{color:#7c9bff;}
+
+/* CONTRACT */
+.contract-box{
+  border:0.5px solid var(--border2);
+  padding:1.5rem 2rem;
+  display:flex;align-items:center;justify-content:space-between;
+  flex-wrap:wrap;gap:1rem;
+  background:rgba(0,229,160,.03);
+}
+.contract-label{font-size:10px;letter-spacing:.1em;color:var(--muted);text-transform:uppercase;margin-bottom:4px;}
+.contract-id{font-size:12px;color:var(--fg);word-break:break-all;}
+.contract-link{
+  font-size:11px;padding:8px 16px;
+  border:0.5px solid var(--g);color:var(--g);
+  text-decoration:none;white-space:nowrap;
+  transition:all .15s;border-radius:1px;letter-spacing:.06em;
+}
+.contract-link:hover{background:var(--g);color:#000;}
+
+/* FOOTER */
+footer{
+  border-top:0.5px solid var(--border);
+  padding:2.5rem 2rem;
+  display:flex;align-items:center;justify-content:space-between;
+  flex-wrap:wrap;gap:1rem;
+}
+.footer-logo{font-size:14px;font-weight:500;letter-spacing:.06em;}
+.footer-logo em{font-style:normal;color:var(--g);}
+.footer-links{display:flex;gap:2rem;}
+.footer-links a{font-size:11px;color:var(--muted);text-decoration:none;letter-spacing:.06em;transition:color .15s;}
+.footer-links a:hover{color:var(--fg);}
+.footer-built{font-size:10px;color:var(--muted);letter-spacing:.06em;}
+.footer-built em{font-style:normal;color:var(--g);}
+
+@keyframes fadeUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:none}}
+
+/* center rule */
+.rule{width:100%;height:0.5px;background:var(--border);margin:0;}
+.rule-g{background:linear-gradient(90deg,transparent,var(--g2),transparent);opacity:.3;}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="logo">AUTH<em>ORA</em></div>
+  <div class="nav-r">
+    <a href="#how" class="nav-link">How</a>
+    <a href="#tools" class="nav-link">Tools</a>
+    <a href="dashboard.html" class="nav-link">Dashboard</a>
+    <a href="https://github.com/NikhilRaikwar/Authora" class="nav-pill" target="_blank">→ GitHub</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-grid"></div>
+  <div class="eyebrow">Stellar Hackathon 2026 · x402 + MPP + Soroban</div>
+  <h1>The <span class="thin">service</span><br><span class="accent">registry</span><br>for AI agents.</h1>
+  <p class="hero-desc">
+    One MCP server. Infinite discoverable paid services.<br>
+    No hardcoded URLs. No subscriptions. No API keys.<br>
+    Just agents that discover, reason, and pay.
+  </p>
+  <div class="hero-actions">
+    <a href="#how" class="btn-p">See how it works</a>
+    <a href="dashboard.html" class="btn-o">Live dashboard →</a>
+  </div>
+  <div class="stats-strip">
+    <div class="stat"><div class="stat-n">11</div><div class="stat-l">MCP tools</div></div>
+    <div class="stat"><div class="stat-n">x402</div><div class="stat-l">+ MPP</div></div>
+    <div class="stat"><div class="stat-n"><span class="live"><span class="dot"></span>Live</span></div><div class="stat-l">testnet</div></div>
+    <div class="stat"><div class="stat-n">$0.001</div><div class="stat-l">per call</div></div>
+  </div>
+</section>
+
+<!-- TICKER -->
+<div class="ticker-wrap" aria-hidden="true">
+  <div class="ticker">
+    <span class="ti">x402 payment <b>verified ✓</b></span>
+    <span class="ti">Soroban registry <b>on-chain</b></span>
+    <span class="ti">0.001 USDC <b>settled</b></span>
+    <span class="ti">MPP charge <b>pulled</b></span>
+    <span class="ti">MCP manifest <b>generated</b></span>
+    <span class="ti">agent balance <b>checked</b></span>
+    <span class="ti">service registered <b>✓</b></span>
+    <span class="ti">Stellar testnet <b>live</b></span>
+    <span class="ti">x402 payment <b>verified ✓</b></span>
+    <span class="ti">Soroban registry <b>on-chain</b></span>
+    <span class="ti">0.001 USDC <b>settled</b></span>
+    <span class="ti">MPP charge <b>pulled</b></span>
+    <span class="ti">MCP manifest <b>generated</b></span>
+    <span class="ti">agent balance <b>checked</b></span>
+    <span class="ti">service registered <b>✓</b></span>
+    <span class="ti">Stellar testnet <b>live</b></span>
+  </div>
+</div>
+
+<!-- HOW IT WORKS -->
+<section class="section" id="how">
+  <div class="section-inner">
+    <div class="label">How it works</div>
+    <div class="steps">
+      <div class="step">
+        <div class="step-n">01</div>
+        <div class="step-icon">⛓</div>
+        <h3>Register on-chain</h3>
+        <p>Any operator registers an x402 endpoint in the Authora Soroban contract. Permissionless. Immutable. On Stellar.</p>
+        <span class="step-tag">Soroban</span>
+      </div>
+      <div class="step">
+        <div class="step-n">02</div>
+        <div class="step-icon">⚡</div>
+        <h3>Dynamic discovery</h3>
+        <p>Authora reads the registry and generates a live MCP manifest. Claude gets every service as a callable tool — automatically.</p>
+        <span class="step-tag">MCP manifest</span>
+      </div>
+      <div class="step">
+        <div class="step-n">03</div>
+        <div class="step-icon">💸</div>
+        <h3>Autonomous payment</h3>
+        <p>The agent calls the tool. Authora signs a Soroban auth entry, settles USDC via x402 or MPP, returns the result.</p>
+        <span class="step-tag">x402 + MPP</span>
+      </div>
+      <div class="step">
+        <div class="step-n">04</div>
+        <div class="step-icon">📈</div>
+        <h3>On-chain proof</h3>
+        <p>Each payment increments the service's on-chain counter. Trust from real economic activity. Every txHash verifiable.</p>
+        <span class="step-tag">StellarExpert</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="rule rule-g"></div>
+
+<!-- FLOW -->
+<section class="section">
+  <div class="section-inner" style="display:flex;justify-content:center;">
+    <div class="flow-block">
+      <div class="label">The payment flow</div>
+      <div class="flow-title">Agent asks.<br><em>Authora pays.</em><br>Chain proves it.</div>
+      <pre class="code"><span class="c1">// User: "Search the Stellar ecosystem for DeFi"</span>
+
+<span class="c4">list_x402_services</span>()
+  → <span class="c3">"Stellar Ecosystem Search · 0.001 USDC"</span>
+
+<span class="c4">estimate_service_cost</span>([<span class="c3">"search"</span>])
+  → <span class="c3">"$0.001 USDC total"</span>
+
+<span class="c4">call_registered_service</span>(<span class="c3">"search"</span>, <span class="c3">"{query:'DeFi'}"</span>)
+  → GET https://xlm402.com/search?q=DeFi
+  → <span class="c1">402 Payment Required ← PAYMENT-REQUIRED header</span>
+  → ExactStellarScheme.createPaymentPayload()
+  → <span class="c2">Soroban auth entry signed (Ed25519)</span>
+  → <span class="c2">OZ Facilitator verifies + settles USDC on-chain</span>
+  → 200 OK + txHash: <span class="c3">"a3f9c2bd..."</span>
+
+<span class="c4">get_payment_history</span>()
+  → <span class="c2">✓</span> Ecosystem Search | 0.0010000 USDC
+  → <span class="c3">https://stellar.expert/explorer/testnet/tx/a3f9c2bd...</span></pre>
+    </div>
+  </div>
+</section>
+
+<!-- TOOLS -->
+<section class="section" id="tools">
+  <div class="section-inner">
+    <div class="label">MCP tools suite — 11 tools</div>
+    <div class="tools-grid">
+      <div class="tool"><div class="tool-cat">Discovery</div><div class="tool-name">list_x402_services</div><div class="tool-desc">Queries Soroban registry. Returns all live services with prices and schemas.</div></div>
+      <div class="tool"><div class="tool-cat">Discovery</div><div class="tool-name">get_mcp_manifest</div><div class="tool-desc">Dynamic JSON tool manifest generated live from on-chain registry entries.</div></div>
+      <div class="tool"><div class="tool-cat">Intelligence</div><div class="tool-name">check_wallet_balance</div><div class="tool-desc">Real-time USDC and XLM balances via Horizon. Agents check funds before spending.</div></div>
+      <div class="tool"><div class="tool-cat">Intelligence</div><div class="tool-name">estimate_service_cost</div><div class="tool-desc">Total cost estimation for a batch of service calls before any payment is made.</div></div>
+      <div class="tool"><div class="tool-cat">Execution</div><div class="tool-name">call_registered_service</div><div class="tool-desc">Calls any registered x402 service. Handles challenge, payment, verification automatically.</div></div>
+      <div class="tool"><div class="tool-cat">Execution</div><div class="tool-name">fetch_paid_resource</div><div class="tool-desc">Direct x402 fetch for any URL. Soroban auth entry signed per request.</div></div>
+      <div class="tool"><div class="tool-cat">Wallet</div><div class="tool-name">swap_xlm_to_usdc</div><div class="tool-desc">Autonomous XLM→USDC swap via Stellar DEX path payments. Replenishes service budget.</div></div>
+      <div class="tool"><div class="tool-cat">Wallet</div><div class="tool-name">autonomous_disbursement</div><div class="tool-desc">Atomic multi-payment to N recipients in one Stellar transaction.</div></div>
+      <div class="tool"><div class="tool-cat">Verification</div><div class="tool-name">get_payment_history</div><div class="tool-desc">Session log with live Stellar Explorer links. Every payment independently verifiable.</div></div>
+      <div class="tool"><div class="tool-cat">MPP</div><div class="tool-name">mpp_demo_charge</div><div class="tool-desc">Stripe MPP Charge intent on Stellar. Pull-based alternative to x402 push payments.</div></div>
+      <div class="tool"><div class="tool-cat">Registry</div><div class="tool-name">register_x402_service</div><div class="tool-desc">Register any x402 endpoint permissionlessly in the on-chain Soroban catalog.</div></div>
+    </div>
+  </div>
+</section>
+
+<div class="rule"></div>
+
+<!-- CONTRACT -->
+<section class="section">
+  <div class="section-inner">
+    <div class="label">Live on Stellar testnet</div>
+    <div style="max-width:720px;margin:0 auto;">
+      <div style="font-family:'Playfair Display',serif;font-size:clamp(1.8rem,5vw,4rem);font-weight:700;letter-spacing:-.02em;margin-bottom:1rem;line-height:1.1;">
+        Real contract.<br><span style="color:var(--g);">Real transactions.</span>
+      </div>
+      <p style="font-size:12px;color:var(--muted);line-height:1.9;margin-bottom:2rem;max-width:560px;">
+        The Authora registry is deployed on Stellar testnet. Every service registration, every payment counter increment — permanently on-chain and independently verifiable. No mock data. No simulation.
+      </p>
+      <div class="contract-box" style="margin-bottom:1rem;">
+        <div>
+          <div class="contract-label">Soroban Registry Contract</div>
+          <div class="contract-id">CAH62PSPXNCIGD5F5IWOZEG2QY2ABPMTFFAZXURDGYRXT3AHL725GQ7X</div>
+        </div>
+        <a class="contract-link" href="https://stellar.expert/explorer/testnet/contract/CAH62PSPXNCIGD5F5IWOZEG2QY2ABPMTFFAZXURDGYRXT3AHL725GQ7X" target="_blank">View on StellarExpert →</a>
+      </div>
+      <div class="contract-box">
+        <div>
+          <div class="contract-label">x402 Facilitator (OpenZeppelin)</div>
+          <div class="contract-id">https://channels.openzeppelin.com/x402/testnet</div>
+        </div>
+        <a class="contract-link" href="https://channels.openzeppelin.com/testnet/gen" target="_blank">Get API Key →</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="footer-logo">AUTH<em>ORA</em></div>
+  <div class="footer-links">
+    <a href="https://github.com/NikhilRaikwar/Authora" target="_blank">GitHub</a>
+    <a href="dashboard.html">Dashboard</a>
+    <a href="https://stellar.expert/explorer/testnet/contract/CAH62PSPXNCIGD5F5IWOZEG2QY2ABPMTFFAZXURDGYRXT3AHL725GQ7X" target="_blank">Contract</a>
+  </div>
+  <div class="footer-built">Agents on Stellar Hackathon · <em>April 2026</em></div>
+</footer>
+</body>
+</html>

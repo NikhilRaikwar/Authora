@@ -407,26 +407,38 @@ async function main(): Promise<void> {
         targetUrl: "http://localhost:3000/mpp-data"
       });
 
-      // Record in history for audit
-      const txHash = await resolveTransactionHash(result.txHash, signer.address, network as any);
-
-      globalPaymentTracker.record({
-        timestamp: new Date().toISOString(),
-        serviceName: "MPP Demo Charge",
-        serviceUrl: "http://localhost:3000/mpp-data",
-        amountUsdc: amount_usdc.toString(),
-        txHash,
-        payerAddress: signer.address,
-        success: true,
-      });
+      // Record in history for audit ONLY IF SUCCESSFUL
+      if (result.success && result.txHash) {
+        const txHash = await resolveTransactionHash(result.txHash, signer.address, network as any);
+        globalPaymentTracker.record({
+          timestamp: new Date().toISOString(),
+          serviceName: "MPP Demo Charge",
+          serviceUrl: "http://localhost:3000/mpp-data",
+          amountUsdc: amount_usdc.toString(),
+          txHash,
+          payerAddress: signer.address,
+          success: true,
+        });
+      }
 
       const output = {
         protocol: "MPP (Machine Payments Protocol by Stripe)",
         type: "Charge intent",
+        status: result.success ? "Success" : "Demo Offline",
         result,
         docs: "https://developers.stellar.org/docs/build/agentic-payments/mpp",
         vs_x402: "MPP uses pull-based charges; x402 uses push-based auth entries. Both settle USDC on Stellar.",
       };
+
+      if (!result.success) {
+        return { 
+          content: [{ 
+            type: "text", 
+            text: `MPP demo service is not running.\nRun: npm run launch\nThen try again.\n\nWhat MPP does: ${result.note}` 
+          }] 
+        };
+      }
+
       return { content: [{ type: "text", text: JSON.stringify(output, null, 2) }] };
     }
   );
