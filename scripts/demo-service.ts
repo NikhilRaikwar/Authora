@@ -65,11 +65,6 @@ app.use(
             price: "$0.01",
             network: "stellar:testnet",
             payTo: sellerAddress,
-            extra: {
-                asset: USDC_SAC,
-                assetCode: "USDC",
-                issuer: "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5"
-            }
           },
         ],
         description: "Authora XLM/USDC price feed",
@@ -82,11 +77,6 @@ app.use(
             price: "$0.001",
             network: "stellar:testnet",
             payTo: sellerAddress,
-            extra: {
-                asset: USDC_SAC,
-                assetCode: "USDC",
-                issuer: "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5"
-            }
           },
         ],
         description: "Authora MPP demo data",

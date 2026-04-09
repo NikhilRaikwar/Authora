@@ -318,7 +318,7 @@
         </div>
         <div style="padding:1rem 1.5rem;">
           <div style="font-size:12px;color:var(--muted);margin-bottom:1rem;line-height:1.6;">Start the local x402 price feed to test real payments.</div>
-          <div class="connect-code">npm run demo-service</div>
+          <div class="connect-code">npm run launch</div>
           <div style="margin-top:1rem;display:flex;align-items:center;justify-content:space-between;">
             <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);">http://localhost:3000/stellar-price</div>
             <button onclick="checkDemoService()" style="font-family:'Space Mono',monospace;font-size:10px;padding:4px 10px;border:0.5px solid var(--border);border-radius:3px;background:transparent;color:var(--muted);cursor:pointer;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--muted)'">check</button>
@@ -340,7 +340,8 @@
 </div>
 
 <script>
-const API = 'http://localhost:3000'; // Target the Authora Demo Service Bridge
+const ANALYTICS_API = 'http://localhost:3000'; // Target the Authora Demo Service Bridge
+const HTTP_API = 'http://localhost:3001';      // Target the Authora HTTP Registry
 const SELLER_ADDRESS = 'GBB3SLFLT4KJO2FK3P4GFURRYGC4ZWB5TDPLISOJ3UX57J7EFYPHHFJT';
 let allPayments = [];
 let activeTab = 'all';
@@ -359,7 +360,7 @@ function shortHash(h) {
 
 async function loadAnalytics() {
   try {
-    const r = await fetch(`${API}/api/analytics`);
+    const r = await fetch(`${ANALYTICS_API}/api/analytics`);
     const data = await r.json();
     
     document.getElementById('stat-usdc').textContent = Number(data.balances.usdc).toFixed(4);
@@ -429,21 +430,32 @@ function renderFeedEmpty() {
 }
 
 async function loadServices() {
-  // Services still hardcoded for demo session UI
-  document.getElementById('stat-services').textContent = '7';
-  document.getElementById('registry-count').textContent = '7 registered';
-  document.getElementById('service-list').innerHTML = `
-    <div class="service-item">
-      <div class="svc-header"><span class="svc-name">Stellar Price Feed</span><span class="svc-price">0.01 USDC</span></div>
-      <div class="svc-url">http://localhost:3000/stellar-price</div>
-      <div class="svc-footer"><span class="svc-tag">✓ verified</span><span class="svc-payments">High Load</span></div>
-    </div>
-    <div class="service-item">
-      <div class="svc-header"><span class="svc-name">MPP Resource Data</span><span class="svc-price">0.001 USDC</span></div>
-      <div class="svc-url">http://localhost:3000/mpp-data</div>
-      <div class="svc-footer"><span class="svc-tag">✓ verified</span><span class="svc-payments">High API</span></div>
-    </div>
-  `;
+  try {
+    const r = await fetch(`${HTTP_API}/services?limit=20`);
+    if (!r.ok) throw new Error('offline');
+    const { services } = await r.json();
+    document.getElementById('stat-services').textContent = services.length;
+    document.getElementById('registry-count').textContent = `${services.length} registered`;
+    if (!services.length) {
+      document.getElementById('service-list').innerHTML = '<div class="feed-empty">No services. Run: <span style="color:var(--accent)">npm run seed</span></div>';
+      return;
+    }
+    document.getElementById('service-list').innerHTML = services.map((s) => {
+      const price = (Number(s.priceUsdc) / 10_000_000).toFixed(7);
+      return `<div class="service-item">
+        <div class="svc-header"><span class="svc-name">${s.name}</span><span class="svc-price">${price} USDC</span></div>
+        <div class="svc-url">${s.url}</div>
+        <div class="svc-footer">
+          <span class="svc-tag ${s.verified ? '' : 'unverified'}">${s.verified ? '✓ verified' : 'unverified'}</span>
+          <span class="svc-payments">${s.totalPayments} payments</span>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    document.getElementById('stat-services').textContent = '—';
+    document.getElementById('registry-count').textContent = 'offline';
+    document.getElementById('service-list').innerHTML = '<div class="feed-empty">Run: <span style="color:var(--accent)">npm run launch</span></div>';
+  }
 }
 
 async function checkDemoService() {
@@ -474,9 +486,6 @@ async function loadAll() {
   document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
   await Promise.all([loadAnalytics(), loadPayments(), loadServices(), checkDemoService()]);
 }
-
-loadAll();
-setInterval(loadAll, 10000);
 
 // Auto refresh
 loadAll();
