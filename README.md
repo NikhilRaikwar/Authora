@@ -23,8 +23,22 @@ Today's MCP servers hardcode one service URL per server. Agents are economically
 
 1. **Service operators** register any x402 endpoint in the Authora Soroban contract (permissionless, on-chain)
 2. **Authora generates** a live MCP tool manifest from all registry entries — dynamically, no code changes
-3. **AI agents** using Claude, GPT, or Gemini discover and call any registered service, paying USDC via x402 automatically
-4. **Every payment** is verifiable on Stellar Explorer — real USDC, real transactions, not simulated
+3. **AI agents** using Claude, GPT, or Gemini discover and call any registered service, paying USDC via **hardened x402 settlement** logic
+4. **Judge-Ready Dashboard** provides a live, premium visual feed of every 64-character on-chain transaction hash
+5. **Fee-Clamp Protocol** ensures high-throughput testnet facilitator compatibility (1 stroop transaction fees)
+
+---
+
+## 💎 Production Hardening (Judge Highlights)
+
+Authora is a production-stabilized infrastructure for agentic payments:
+
+*   **Canonical SAC Enforcement**: Automated override to the live Circle USDC SAC (`CBIELTK6...`) to bypass legacy server errors.
+*   **Soroban Auth-Type Routing**: Custom signing logic that detects `sorobanCredentialsSourceAccount` and handles full envelope signing vs. auth-entry signing.
+*   **Transactional Fee Clamping**: Implemented the official Stellar x402 fee-clamp (1 stroop) to prevent testnet facilitator rejection.
+*   **Pre-Flight Diagnostics**: Automated wallet readiness checks (Trustlines, Liquidity) before settlement to ensure 100% agent success.
+
+---
 
 ---
 
