@@ -22,7 +22,7 @@ async function main() {
       url: "https://stellar-observatory.vercel.app/api/space-weather",
       name: "Stellar Space Weather",
       description: "Get real-time solar wind, geomagnetic activity, and space weather data from NASA feeds",
-      priceUsdc: 0.001,
+      priceUsdc: 100000, // 0.01 USDC
       inputSchema: JSON.stringify({
         type: "object",
         properties: { date: { type: "string", description: "ISO date string, defaults to today" } },
@@ -37,7 +37,7 @@ async function main() {
       url: "https://xlm402.com/search",
       name: "Stellar Ecosystem Search",
       description: "Search the Stellar ecosystem — projects, anchors, DEX pools, and contract data",
-      priceUsdc: 0.001,
+      priceUsdc: 10000, // 0.001 USDC
       inputSchema: JSON.stringify({
         type: "object",
         properties: { query: { type: "string", description: "Search query" } },
@@ -52,7 +52,7 @@ async function main() {
       url: `http://localhost:3000/stellar-price`,
       name: "Stellar Price Feed",
       description: "Get current XLM/USDC price and 24h volume from Stellar DEX",
-      priceUsdc: 0.001,
+      priceUsdc: 1000000, // 0.1 USDC (Stellar Demo pricing)
       inputSchema: JSON.stringify({
         type: "object",
         properties: {},

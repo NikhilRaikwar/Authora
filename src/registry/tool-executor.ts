@@ -1,3 +1,12 @@
+/**
+ * tool-executor.ts - Fixed version
+ *
+ * FIXES:
+ *  1. Correctly builds URL for GET with query params vs POST with body
+ *  2. Extracts payment hash from all OZ facilitator response formats
+ *  3. Records payment to on-chain registry after successful call
+ */
+
 import { ServiceEntry, AuthoraRegistryClient } from "./registry-client.js";
 import { sanitizeToolName } from "./manifest-generator.js";
 import { MCPContent } from "./manifest-types.js";
@@ -19,102 +28,142 @@ export interface ToolExecutorParams {
   };
 }
 
-/**
- * Executes a tool by routing it through the existing fetch_paid_resource logic.
- */
-export async function executeRegisteredTool(params: ToolExecutorParams): Promise<{ content: MCPContent[] }> {
-  const { toolName, toolInput, services, fetchWithPayment, registryClient, registryConfig } = params;
+export async function executeRegisteredTool(
+  params: ToolExecutorParams,
+): Promise<{ content: MCPContent[] }> {
+  const {
+    toolName,
+    toolInput,
+    services,
+    fetchWithPayment,
+    registryClient,
+    registryConfig,
+  } = params;
 
-  // 1. Find service
-  const service = services.find(s => sanitizeToolName(s.url) === toolName);
+  // Find the matching service
+  const service = services.find(
+    (s) =>
+      sanitizeToolName(s.url) === toolName ||
+      sanitizeToolName(s.url).toLowerCase() === toolName.toLowerCase(),
+  );
+
   if (!service) {
+    const available = services.map((s) => sanitizeToolName(s.url)).join(", ");
     return {
-      content: [{ type: "text", text: `Error: Registerd tool ${toolName} not found in Authora registry.` }],
+      content: [
+        {
+          type: "text",
+          text: `Service "${toolName}" not found in registry.\nAvailable: ${available || "none — run: npm run seed"}`,
+        },
+      ],
     };
   }
 
-  // 2. Build the HTTP request
+  // Build request
   const { _overrideUrl, ...bodyData } = toolInput;
-  const targetUrlBase = (_overrideUrl as string) || service.url;
-  
+  const baseUrl = (_overrideUrl as string) || service.url;
   const inputKeys = Object.keys(bodyData);
-  const method = inputKeys.length > 0 ? "POST" : "GET";
-  let targetUrl = targetUrlBase;
+  const priceUsdc = (Number(service.priceUsdc) / 10_000_000).toFixed(7);
 
+  let targetUrl = baseUrl;
   const fetchOptions: RequestInit = {
-    method,
     headers: { "content-type": "application/json" },
   };
 
-  if (method === "GET" && inputKeys.length > 0) {
-    const params = new URLSearchParams();
+  if (inputKeys.length === 0) {
+    // No inputs — GET with no query params
+    fetchOptions.method = "GET";
+  } else if (inputKeys.length <= 3 && Object.values(bodyData).every((v) => typeof v !== "object")) {
+    // Simple inputs — GET with query params
+    fetchOptions.method = "GET";
+    const qs = new URLSearchParams();
     for (const [k, v] of Object.entries(bodyData)) {
-      if (typeof v === "string" || typeof v === "number") {
-        params.set(k, String(v));
-      }
+      qs.set(k, String(v));
     }
-    const queryString = params.toString();
-    if (queryString) {
-      targetUrl = targetUrlBase.includes("?") 
-        ? `${targetUrlBase}&${queryString}` 
-        : `${targetUrlBase}?${queryString}`;
-    }
-  } else if (method === "POST") {
+    targetUrl = baseUrl.includes("?") ? `${baseUrl}&${qs}` : `${baseUrl}?${qs}`;
+  } else {
+    // Complex inputs — POST with JSON body
+    fetchOptions.method = "POST";
     fetchOptions.body = JSON.stringify(bodyData);
   }
 
+  console.error(
+    `[Authora] Calling ${service.name} (${priceUsdc} USDC) → ${targetUrl}`,
+  );
+
   try {
-    // 3. Call the payment-aware fetch logic
     const response = await fetchWithPayment(targetUrl, fetchOptions);
 
-    const paymentResponseHeader = response.headers.get("payment-response") || response.headers.get("PAYMENT-RESPONSE");
+    // Extract payment proof from response headers
+    const paymentResponseHeader =
+      response.headers.get("payment-response") ||
+      response.headers.get("PAYMENT-RESPONSE") ||
+      response.headers.get("x-payment-response");
+
     let txHash = "pending";
     if (paymentResponseHeader) {
-      try {
-        const decoded = decodeAuthoraPaymentHeader(paymentResponseHeader);
-        if (decoded) {
-          txHash = decoded.transaction || decoded.transactionHash || decoded.hash || decoded.settlementId || decoded.reference || decoded.id || "pending";
-        }
-      } catch (e) {
-        console.error("Failed to decode payment response header:", e);
+      const decoded = decodeAuthoraPaymentHeader(paymentResponseHeader);
+      if (decoded) {
+        txHash =
+          decoded.transaction ||
+          decoded.transactionHash ||
+          decoded.hash ||
+          decoded.reference ||
+          decoded.settlementId ||
+          decoded.id ||
+          "pending";
       }
     }
 
-    // RAPID: Resolve real hash from Horizon immediately
-    txHash = await resolveTransactionHash(txHash, registryConfig.payerAddress, registryConfig.network as any);
+    // Resolve to real Stellar tx hash via Horizon polling
+    txHash = await resolveTransactionHash(
+      txHash,
+      registryConfig.payerAddress,
+      registryConfig.network as any,
+    );
 
-    if (paymentResponseHeader || response.ok) {
-      globalPaymentTracker.record({
-        timestamp: new Date().toISOString(),
-        serviceName: service.name,
-        serviceUrl: service.url,
-        amountUsdc: (Number(service.priceUsdc) / 10_000_000).toFixed(7),
-        txHash,
-        payerAddress: registryConfig.payerAddress || "Autora Wallet",
-        success: response.ok,
-      });
+    // Record in payment history
+    globalPaymentTracker.record({
+      timestamp: new Date().toISOString(),
+      serviceName: service.name,
+      serviceUrl: service.url,
+      amountUsdc: priceUsdc,
+      txHash,
+      payerAddress: registryConfig.payerAddress,
+      success: response.ok,
+    });
+
+    // Update on-chain payment counter (fire-and-forget)
+    if (response.ok && registryConfig.contractId) {
+      registryClient
+        .recordPayment({
+          secretKey: registryConfig.secretKey,
+          rpcUrl: registryConfig.rpcUrl,
+          contractId: registryConfig.contractId,
+          url: service.url,
+          payerAddress: registryConfig.payerAddress,
+          network: registryConfig.network,
+        })
+        .catch((err) =>
+          console.error("[Authora] On-chain payment record failed:", err.message),
+        );
     }
 
-    const rawBody = await response.text();
+    const body = await response.text();
 
-    // 4. Record payment on-chain (fire-and-forget)
-    if (response.ok) {
-       registryClient.recordPayment({
-        secretKey: registryConfig.secretKey,
-        rpcUrl: registryConfig.rpcUrl,
-        contractId: registryConfig.contractId,
-        url: service.url,
-        payerAddress: "0", // Address doesn't matter for counting here, just needed for contract
-        network: registryConfig.network
-      }).catch(err => console.error("Failed to record on-chain payment:", err));
-    }
+    const summary = response.ok
+      ? `✅ Payment successful! ${priceUsdc} USDC paid.\nTx: https://stellar.expert/explorer/testnet/tx/${txHash}\n\nResponse:\n${body}`
+      : `❌ Request failed (${response.status}): ${body}`;
 
+    return { content: [{ type: "text", text: summary }] };
+  } catch (err: any) {
     return {
-      content: [{ type: "text", text: rawBody }],
-    };
-  } catch (error: any) {
-    return {
-      content: [{ type: "text", text: `Execution error for ${toolName}: ${error.message}` }],
+      content: [
+        {
+          type: "text",
+          text: `Error calling ${service.name}: ${err.message}\n\nDebug tips:\n• Run check_wallet_balance to verify USDC balance\n• Run x402_facilitator_supported to verify facilitator is up\n• Ensure X402_FACILITATOR_API_KEY is set in .env`,
+        },
+      ],
     };
   }
 }
