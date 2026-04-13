@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "public": true,
+  "name": "authora-web",
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "buildCommand": null,
+  "installCommand": "npm install",
+  "outputDirectory": "."
+}
