@@ -280,9 +280,9 @@
 }</div>
           <div style="margin-top:1rem;display:flex;flex-direction:column;gap:8px;">
             <div style="font-size:12px;color:var(--muted);font-family:'Space Mono',monospace;">Then ask Claude:</div>
-            <div style="font-size:12px;background:rgba(0,229,160,0.06);border:0.5px solid rgba(0,229,160,0.15);border-radius:4px;padding:8px 10px;font-family:'Space Mono',monospace;color:var(--accent);">"List all x402 services available"</div>
-            <div style="font-size:12px;background:rgba(0,229,160,0.06);border:0.5px solid rgba(0,229,160,0.15);border-radius:4px;padding:8px 10px;font-family:'Space Mono',monospace;color:var(--accent);">"Check my wallet balance"</div>
-            <div style="font-size:12px;background:rgba(0,229,160,0.06);border:0.5px solid rgba(0,229,160,0.15);border-radius:4px;padding:8px 10px;font-family:'Space Mono',monospace;color:var(--accent);">"Call the Stellar price feed"</div>
+            <div style="font-size:12px;background:rgba(0,229,160,0.06);border:0.5px solid rgba(0,229,160,0.15);border-radius:4px;padding:8px 10px;font-family:'Space Mono',monospace;color:var(--accent);">"Analyze Blend protocol with the DeFi Worker"</div>
+            <div style="font-size:12px;background:rgba(0,229,160,0.06);border:0.5px solid rgba(0,229,160,0.15);border-radius:4px;padding:8px 10px;font-family:'Space Mono',monospace;color:var(--accent);">"Check my spending policy and safety caps"</div>
+            <div style="font-size:12px;background:rgba(0,229,160,0.06);border:0.5px solid rgba(0,229,160,0.15);border-radius:4px;padding:8px 10px;font-family:'Space Mono',monospace;color:var(--accent);">"Reset my autonomous safety session"</div>
           </div>
         </div>
       </div>
@@ -310,18 +310,18 @@
         </div>
       </div>
 
-      <!-- Demo service status -->
+      <!-- Worker Agent Status -->
       <div class="panel">
         <div class="panel-header">
-          <span class="panel-title">Demo service</span>
-          <span id="demo-status" class="panel-badge" style="background:rgba(255,77,77,0.1);color:var(--red);">offline</span>
+          <span class="panel-title">Worker Agent (A2A)</span>
+          <span id="worker-status" class="panel-badge" style="background:rgba(255,77,77,0.1);color:var(--red);">offline</span>
         </div>
         <div style="padding:1rem 1.5rem;">
-          <div style="font-size:12px;color:var(--muted);margin-bottom:1rem;line-height:1.6;">Start the local x402 price feed to test real payments.</div>
-          <div class="connect-code">npm run launch</div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:1rem;line-height:1.6;">DeFi Intelligence Agent running on local port 3002.</div>
+          <div class="connect-code">npm run agent-worker</div>
           <div style="margin-top:1rem;display:flex;align-items:center;justify-content:space-between;">
-            <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);">http://localhost:3000/stellar-price</div>
-            <button onclick="checkDemoService()" style="font-family:'Space Mono',monospace;font-size:10px;padding:4px 10px;border:0.5px solid var(--border);border-radius:3px;background:transparent;color:var(--muted);cursor:pointer;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--muted)'">check</button>
+            <div style="font-family:'Space Mono',monospace;font-size:10px;color:var(--muted);">http://127.0.0.1:3002</div>
+            <button onclick="checkWorkerStatus()" style="font-family:'Space Mono',monospace;font-size:10px;padding:4px 10px;border:0.5px solid var(--border);border-radius:3px;background:transparent;color:var(--muted);cursor:pointer;">verify</button>
           </div>
         </div>
       </div>
@@ -482,9 +482,26 @@ function switchTab(tab) {
   renderFeed();
 }
 
+async function checkWorkerStatus() {
+  const el = document.getElementById('worker-status');
+  try {
+    const r = await fetch('http://127.0.0.1:3002/health', { signal: AbortSignal.timeout(2000) });
+    const data = await r.json();
+    if (data.status === 'ok') {
+      el.style.background = 'rgba(0,229,160,0.1)';
+      el.style.color = 'var(--accent)';
+      el.textContent = '● online';
+    }
+  } catch(e) {
+    el.style.background = 'rgba(255,77,77,0.1)';
+    el.style.color = 'var(--red)';
+    el.textContent = '● offline';
+  }
+}
+
 async function loadAll() {
   document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
-  await Promise.all([loadAnalytics(), loadPayments(), loadServices(), checkDemoService()]);
+  await Promise.all([loadAnalytics(), loadPayments(), loadServices(), checkWorkerStatus()]);
 }
 
 // Auto refresh
