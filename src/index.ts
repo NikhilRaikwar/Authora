@@ -32,6 +32,7 @@ import { AuthoraRegistryClient } from "./registry/registry-client.js";
 import { generateMCPManifest, sanitizeToolName } from "./registry/manifest-generator.js";
 import { executeRegisteredTool } from "./registry/tool-executor.js";
 import { globalPaymentTracker } from "./registry/payment-tracker.js";
+import { SpendingGuard, DEFAULT_POLICY } from "./registry/spending-guard.js";
 
 type StellarNetwork = typeof STELLAR_TESTNET_CAIP2 | typeof STELLAR_PUBNET_CAIP2;
 
@@ -78,6 +79,13 @@ async function main(): Promise<void> {
   const fetchWithPayment = wrapFetchWithPayment(fetch, httpClient);
 
   const registryClient = new AuthoraRegistryClient();
+
+  // SpendingGuard init
+  const spendingGuard = new SpendingGuard({
+    maxSessionUsdc: parseFloat(process.env.MAX_SESSION_USDC || "0.10"),
+    maxPerServiceUsdc: parseFloat(process.env.MAX_PER_SERVICE_USDC || "0.05"),
+    maxCallsPerService: parseInt(process.env.MAX_CALLS_PER_SERVICE || "10"),
+  });
 
   // ── MCP Server ────────────────────────────────────────────────────────────
   const server = new McpServer({
@@ -349,39 +357,67 @@ async function main(): Promise<void> {
         .describe("The sanitized tool name from the registry (from list_x402_services)"),
       input_data: z.string().default("{}").describe("JSON string of input parameters"),
     },
-    async ({ service_name, input_data }) => {
-      const services = await registryClient.listServices({
-        rpcUrl,
-        contractId,
-        limit: 50,
-      });
-
-      let toolInput: Record<string, unknown> = {};
-      try {
-        toolInput = JSON.parse(input_data);
-      } catch {
-        return {
-          content: [
-            { type: "text", text: `Invalid JSON in input_data: ${input_data}` },
-          ],
-        };
-      }
-
-      return await executeRegisteredTool({
-        toolName: service_name,
-        toolInput,
-        services,
-        fetchWithPayment,
-        registryClient,
-        registryConfig: {
-          secretKey: operatorKey,
+      async ({ service_name, input_data }) => {
+        const services = await registryClient.listServices({
           rpcUrl,
           contractId,
-          network,
-          payerAddress: signer.address,
-        },
-      });
-    },
+          limit: 50,
+        });
+
+        // Find the service first to check price
+        const service = services.find(s => 
+          sanitizeToolName(s.name) === service_name || 
+          sanitizeToolName(s.url) === service_name
+        );
+
+        if (!service) {
+          return { content: [{ type: "text", text: `Service '${service_name}' not found in registry.` }] };
+        }
+
+        let toolInput: Record<string, unknown> = {};
+        try {
+          toolInput = JSON.parse(input_data);
+        } catch {
+          return {
+            content: [
+              { type: "text", text: `Invalid JSON in input_data: ${input_data}` },
+            ],
+          };
+        }
+
+        // Budget check
+        const priceUsdc = Number(service.priceUsdc) / 10_000_000;
+        const priceCheck = spendingGuard.check(service.url, priceUsdc);
+        if (!priceCheck.allowed) {
+          return { content: [{ type: "text", text: `🛡️ SpendingGuard BLOCKED\n${priceCheck.reason}\n\n${priceCheck.suggestion}` }] };
+        }
+
+        // Injection check
+        const injectionCheck = spendingGuard.detectInjection(toolInput);
+        if (injectionCheck.suspicious) {
+          return { content: [{ type: "text", text: `⚠️ SECURITY ALERT\n${injectionCheck.reason}\nPayment blocked.` }] };
+        }
+
+        const result = await executeRegisteredTool({
+          toolName: service_name,
+          toolInput,
+          services,
+          fetchWithPayment,
+          registryClient,
+          registryConfig: {
+            secretKey: operatorKey,
+            rpcUrl,
+            contractId,
+            network,
+            payerAddress: signer.address,
+          },
+        });
+
+        // Record on success
+        spendingGuard.record(service.url, priceUsdc);
+
+        return result;
+      },
   );
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -595,6 +631,46 @@ async function main(): Promise<void> {
     },
   );
 
+  server.tool(
+    "test_worker_mpp",
+    "Test Stellar MPP (Pull) payment to the local worker agent. Bypasses the registry to verify protocol connectivity.",
+    { amount: z.number().default(0.005) },
+    async ({ amount }) => {
+      const { createMPPCharge } = await import("./mpp/mpp-client.js");
+      const result = await createMPPCharge({
+        secretKey,
+        amount,
+        network,
+        targetUrl: "http://localhost:3002/v2/mpp-analyze",
+      });
+
+      if (result.success) {
+        globalPaymentTracker.record({
+          timestamp: new Date().toISOString(),
+          serviceName: "Worker MPP Test",
+          serviceUrl: "http://localhost:3002/v2/mpp-analyze",
+          amountUsdc: amount.toString(),
+          txHash: result.txHash || "pending",
+          payerAddress: signer.address,
+          success: true,
+        });
+      }
+
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({
+            message: "Worker MPP Test complete",
+            protocol: "MPP (Machine Payments Protocol)",
+            success: result.success,
+            txLink: result.txHash ? `https://stellar.expert/explorer/testnet/tx/${result.txHash}` : "pending",
+            data: result
+          }, null, 2)
+        }]
+      };
+    }
+  );
+
   // ─────────────────────────────────────────────────────────────────────────
   // TOOL: swap_xlm_to_usdc
   // ─────────────────────────────────────────────────────────────────────────
@@ -687,6 +763,39 @@ async function main(): Promise<void> {
         };
       }
     },
+  );
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // TOOL: check_spending_policy
+  // ─────────────────────────────────────────────────────────────────────────
+  server.tool(
+    "check_spending_policy",
+    "View current session budget usage and safety policy",
+    {},
+    async () => ({
+      content: [{
+        type: "text",
+        text: JSON.stringify(spendingGuard.status(), null, 2)
+      }]
+    })
+  );
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // TOOL: reset_spending_session
+  // ─────────────────────────────────────────────────────────────────────────
+  server.tool(
+    "reset_spending_session",
+    "Reset spending session — clears budget counters",
+    {},
+    async () => {
+      spendingGuard.reset();
+      return {
+        content: [{
+          type: "text",
+          text: "✅ Session reset.\n\n" + JSON.stringify(spendingGuard.status(), null, 2)
+        }]
+      };
+    }
   );
 
   // ── Connect and start ─────────────────────────────────────────────────────

@@ -47,8 +47,8 @@ export class AuthoraRegistryClient {
     const networkPassphrase = getNetworkPassphrase(network as any);
     const signer = createEd25519Signer(secretKey, network as any);
 
-    // Convert decimal USDC to stroops (7 decimals)
-    const stroops = convertToTokenAmount(service.priceUsdc.toString(), 7);
+    // Raw amount in stroops (usually 7 decimals for USDC)
+    const stroops = service.priceUsdc.toString();
 
     const tx = await contract.AssembledTransaction.build({
       contractId: contractId as any,
