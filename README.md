@@ -24,8 +24,9 @@ Today's MCP servers hardcode one service URL per server. Agents are economically
 1. **Service operators** register any x402 endpoint in the Authora Soroban contract (permissionless, on-chain)
 2. **Authora generates** a live MCP tool manifest from all registry entries — dynamically, no code changes
 3. **AI agents** using Claude, GPT, or Gemini discover and call any registered service, paying USDC via **hardened x402 settlement** logic
-4. **Judge-Ready Dashboard** provides a live, premium visual feed of every 64-character on-chain transaction hash
-5. **Fee-Clamp Protocol** ensures high-throughput testnet facilitator compatibility (1 stroop transaction fees)
+4. **SpendingGuard Safety**: Autonomous protection layer that blocks prompt injections and prevents overspending via real-time session budgets.
+5. **Worker Economy**: specialized "Worker Agents" that earn USDC from Orchestrator agents for complex missions.
+6. **Judge-Ready Dashboard**: Provides a live, premium visual feed of every 64-character on-chain transaction hash.
 
 ---
 
@@ -33,10 +34,10 @@ Today's MCP servers hardcode one service URL per server. Agents are economically
 
 Authora is a production-stabilized infrastructure for agentic payments:
 
+*   **SpendingGuard Protection**: Autonomous detection of prompt injections (e.g., "ignore rules") and session-based financial safety rails.
+*   **Agent-to-Agent (A2A) Missions**: Support for worker agents that accept x402 and MPP payments for intelligence tasks.
 *   **Canonical SAC Enforcement**: Automated override to the live Circle USDC SAC (`CBIELTK6...`) to bypass legacy server errors.
-*   **Soroban Auth-Type Routing**: Custom signing logic that detects `sorobanCredentialsSourceAccount` and handles full envelope signing vs. auth-entry signing.
 *   **Transactional Fee Clamping**: Implemented the official Stellar x402 fee-clamp (1 stroop) to prevent testnet facilitator rejection.
-*   **Pre-Flight Diagnostics**: Automated wallet readiness checks (Trustlines, Liquidity) before settlement to ensure 100% agent success.
 
 ---
 
@@ -58,7 +59,8 @@ graph TB
         L[list_x402_services]
         CALL[call_registered_service]
         PH[get_payment_history]
-        MPP[mpp_demo_charge]
+        GUARD[SpendingGuard Security]
+        MPP[test_worker_mpp]
     end
     
     subgraph STELLAR["Stellar Network"]
@@ -74,7 +76,8 @@ graph TB
         S3["Ecosystem Search\n0.001 USDC/call"]
     end
     
-    C -->|"Tool call"| M
+    C -->|"Tool call"| GUARD
+    GUARD -->|"Verified"| M
     M --> E & W & L & CALL & PH & MPP
     L -->|"list_services()"| REG
     CALL -->|"fetchWithPayment()"| OZ
@@ -92,7 +95,7 @@ graph TB
 
 ---
 
-## MCP Tools Suite (11 Tools)
+## MCP Tools Suite (15 Tools)
 
 | Category | Tool | Description |
 |---|---|---|
@@ -103,8 +106,12 @@ graph TB
 | **Execution** | `call_registered_service` | Auto-pay any registered service via x402 |
 | | `fetch_paid_resource` | Direct x402 fetch for any URL |
 | **Verification** | `get_payment_history` | Session log with Stellar Explorer links |
+| | `get_service_schema` | Detailed JSON metadata for agentic services |
+| **MPP** | `test_worker_mpp` | Real-time MPP Pull payment testing |
 | **Registry** | `register_x402_service` | Register any x402 endpoint on-chain |
-| **MPP** | `mpp_demo_charge` | Stripe MPP Charge intent demonstration |
+| **Safety** | `check_spending_policy` | View real-time budget and security status |
+| | `reset_spending_session` | Reset safety counters for a new session |
+| **Security** | `verify_stellar_proof` | On-chain validation of x402 receipts |
 | **Diagnostics** | `x402_wallet_info` | Wallet config and contract addresses |
 | | `x402_facilitator_supported` | OZ facilitator health check |
 
